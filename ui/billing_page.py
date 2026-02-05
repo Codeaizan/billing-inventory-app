@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                             QComboBox, QSpinBox, QTextEdit, QMessageBox, QFrame,
                             QHeaderView, QCompleter, QGroupBox, QGridLayout, QCheckBox,
-                            QDialog, QListWidget, QDialogButtonBox)
+                            QDialog, QListWidget, QDialogButtonBox, QScrollArea)
 from PyQt5.QtCore import Qt, QStringListModel
 from PyQt5.QtGui import QFont, QColor
 from modules.billing import billing_manager
@@ -13,6 +13,7 @@ from database.db_manager import db
 from utils.signals import app_signals
 from utils.logger import logger
 
+
 class BillingPage(QWidget):
     """Billing page for creating invoices"""
     
@@ -22,13 +23,23 @@ class BillingPage(QWidget):
         self.load_products()
         self.load_sales_persons()
         
-        # ADD THIS LINE - Connect signal for real-time updates
+        # Connect signal for real-time updates
         app_signals.inventory_updated.connect(self.load_products)
     
     def init_ui(self):
         """Initialize the user interface"""
-        main_layout = QHBoxLayout()
+        # ✅ CREATE SCROLL AREA
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setFrameShape(QFrame.NoFrame)
+        
+        # Content widget
+        content = QWidget()
+        main_layout = QHBoxLayout(content)
         main_layout.setSpacing(10)
+        main_layout.setContentsMargins(5, 5, 5, 5)
         
         # Left panel - Product search and cart
         left_panel = self.create_left_panel()
@@ -39,7 +50,15 @@ class BillingPage(QWidget):
         main_layout.addWidget(left_panel, 65)
         main_layout.addWidget(right_panel, 35)
         
-        self.setLayout(main_layout)
+        # ✅ SET CONTENT TO SCROLL AREA
+        scroll.setWidget(content)
+        
+        # ✅ MAIN LAYOUT FOR PAGE
+        page_layout = QVBoxLayout()
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.addWidget(scroll)
+        
+        self.setLayout(page_layout)
     
     def create_left_panel(self) -> QFrame:
         """Create left panel with product search and cart"""
@@ -51,8 +70,10 @@ class BillingPage(QWidget):
                 padding: 15px;
             }
         """)
+        panel.setMinimumWidth(500)  # ✅ SET MINIMUM WIDTH
         
         layout = QVBoxLayout(panel)
+        layout.setSpacing(10)
         
         # Title
         title = QLabel("Add Products to Bill")
@@ -63,13 +84,16 @@ class BillingPage(QWidget):
         # Product search section
         search_layout = QHBoxLayout()
         
-        search_label = QLabel("Search Product:")
+        search_label = QLabel("Search:")
+        search_label.setMinimumWidth(60)
         self.product_search = QLineEdit()
         self.product_search.setPlaceholderText("Type product name or scan barcode...")
         self.product_search.returnPressed.connect(self.on_search_product)
+        self.product_search.setMinimumHeight(35)
         
-        search_btn = QPushButton("🔍 Search")
-        search_btn.setStyleSheet("background-color: #2196F3; color: white;")
+        search_btn = QPushButton("🔍")
+        search_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px 15px;")
+        search_btn.setMinimumHeight(35)
         search_btn.clicked.connect(self.on_search_product)
         
         search_layout.addWidget(search_label)
@@ -81,9 +105,11 @@ class BillingPage(QWidget):
         # Product details section
         product_group = QGroupBox("Selected Product Details")
         product_layout = QGridLayout()
+        product_layout.setSpacing(8)
         
         self.selected_product_label = QLabel("No product selected")
         self.selected_product_label.setStyleSheet("color: #666; font-style: italic;")
+        self.selected_product_label.setWordWrap(True)
         
         product_layout.addWidget(QLabel("Product:"), 0, 0)
         product_layout.addWidget(self.selected_product_label, 0, 1, 1, 3)
@@ -114,10 +140,12 @@ class BillingPage(QWidget):
         self.quantity_spin.setMinimum(1)
         self.quantity_spin.setMaximum(10000)
         self.quantity_spin.setValue(1)
+        self.quantity_spin.setMinimumHeight(30)
         product_layout.addWidget(self.quantity_spin, 3, 1)
         
         add_btn = QPushButton("➕ Add to Cart")
-        add_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        add_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
+        add_btn.setMinimumHeight(30)
         add_btn.clicked.connect(self.add_to_cart)
         product_layout.addWidget(add_btn, 3, 2, 1, 2)
         
@@ -138,6 +166,7 @@ class BillingPage(QWidget):
         self.cart_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.cart_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.cart_table.setAlternatingRowColors(True)
+        self.cart_table.setMinimumHeight(200)  # ✅ SET MINIMUM HEIGHT
         
         layout.addWidget(self.cart_table)
         
@@ -145,11 +174,11 @@ class BillingPage(QWidget):
         cart_actions = QHBoxLayout()
         
         remove_btn = QPushButton("🗑️ Remove Selected")
-        remove_btn.setStyleSheet("background-color: #f44336; color: white;")
+        remove_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
         remove_btn.clicked.connect(self.remove_from_cart)
         
         clear_btn = QPushButton("🧹 Clear Cart")
-        clear_btn.setStyleSheet("background-color: #FF9800; color: white;")
+        clear_btn.setStyleSheet("background-color: #FF9800; color: white; padding: 8px;")
         clear_btn.clicked.connect(self.clear_cart)
         
         cart_actions.addWidget(remove_btn)
@@ -170,8 +199,18 @@ class BillingPage(QWidget):
                 padding: 15px;
             }
         """)
+        panel.setMinimumWidth(350)  # ✅ SET MINIMUM WIDTH
+        panel.setMaximumWidth(500)  # ✅ SET MAXIMUM WIDTH
         
-        layout = QVBoxLayout(panel)
+        # ✅ ADD SCROLL AREA FOR RIGHT PANEL
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(10)
         
         # Title
         title = QLabel("Customer & Billing")
@@ -184,6 +223,7 @@ class BillingPage(QWidget):
         sp_layout.addWidget(QLabel("Sales Person: *"))
         self.sales_person_combo = QComboBox()
         self.sales_person_combo.setStyleSheet("padding: 5px; font-weight: bold;")
+        self.sales_person_combo.setMinimumHeight(30)
         sp_layout.addWidget(self.sales_person_combo, 1)
         layout.addLayout(sp_layout)
         
@@ -199,13 +239,16 @@ class BillingPage(QWidget):
         # Customer info
         customer_group = QGroupBox("Customer Information")
         customer_layout = QVBoxLayout()
+        customer_layout.setSpacing(8)
         
-        # Customer search (NEW)
+        # Customer search
         search_customer_layout = QHBoxLayout()
-        search_customer_label = QLabel("Search Customer:")
+        search_customer_label = QLabel("Search:")
+        search_customer_label.setMinimumWidth(60)
         self.customer_search = QLineEdit()
-        self.customer_search.setPlaceholderText("Type name or phone to search...")
+        self.customer_search.setPlaceholderText("Name or phone...")
         self.customer_search.textChanged.connect(self.on_customer_search)
+        self.customer_search.setMinimumHeight(30)
         
         search_customer_layout.addWidget(search_customer_label)
         search_customer_layout.addWidget(self.customer_search)
@@ -220,11 +263,13 @@ class BillingPage(QWidget):
         customer_layout.addWidget(QLabel("Customer Name: *"))
         self.customer_name = QLineEdit()
         self.customer_name.setPlaceholderText("Enter customer name")
+        self.customer_name.setMinimumHeight(30)
         customer_layout.addWidget(self.customer_name)
         
         customer_layout.addWidget(QLabel("Phone:"))
         self.customer_phone = QLineEdit()
         self.customer_phone.setPlaceholderText("Enter phone number")
+        self.customer_phone.setMinimumHeight(30)
         customer_layout.addWidget(self.customer_phone)
         
         customer_layout.addWidget(QLabel("Address:"))
@@ -239,7 +284,8 @@ class BillingPage(QWidget):
         customer_layout.addWidget(self.gstin_label)
         
         self.customer_gstin = QLineEdit()
-        self.customer_gstin.setPlaceholderText("Enter GSTIN (required for GST bill)")
+        self.customer_gstin.setPlaceholderText("Enter GSTIN")
+        self.customer_gstin.setMinimumHeight(30)
         self.customer_gstin.setVisible(False)
         customer_layout.addWidget(self.customer_gstin)
         
@@ -249,6 +295,7 @@ class BillingPage(QWidget):
         # Bill summary
         summary_group = QGroupBox("Bill Summary")
         summary_layout = QVBoxLayout()
+        summary_layout.setSpacing(5)
         
         self.item_count_label = QLabel("Items: 0")
         self.item_count_label.setFont(QFont("Arial", 11))
@@ -322,15 +369,25 @@ class BillingPage(QWidget):
                 font-size: 16px;
                 font-weight: bold;
                 padding: 15px;
+                border-radius: 5px;
             }
             QPushButton:hover {
                 background-color: #45a049;
             }
         """)
+        generate_btn.setMinimumHeight(50)
         generate_btn.clicked.connect(self.generate_bill)
         layout.addWidget(generate_btn)
         
         layout.addStretch()
+        
+        # Set scroll content
+        scroll.setWidget(content)
+        
+        # Panel layout
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.addWidget(scroll)
         
         return panel
     
@@ -583,7 +640,7 @@ class BillingPage(QWidget):
                 preview_dialog = BillPreviewDialog(bill_data, pdf_path, self)
                 preview_dialog.exec_()
                 
-                # ✅ REFRESH ENTIRE APP
+                # Refresh entire app
                 self.refresh_entire_app()
                 
                 # Clear cart and form after closing preview
@@ -689,7 +746,3 @@ class BillingPage(QWidget):
         app_signals.inventory_updated.emit()
     
         logger.info("Application refreshed after bill generation")
-
-
-    # Clear search field
-        self.customer_search.clear()

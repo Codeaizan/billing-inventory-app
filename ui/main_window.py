@@ -1,12 +1,13 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QTabWidget, QPushButton, QLabel, QMessageBox,
-                            QStatusBar, QAction, QMenuBar)
+                            QStatusBar, QAction, QMenuBar, QApplication)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QIcon
 from datetime import datetime
 from config import APP_NAME, COMPANY_NAME, APP_VERSION
 from modules.auth import auth_manager
 from utils.logger import logger
+
 
 class MainWindow(QMainWindow):
     """Main application window with tabs"""
@@ -20,7 +21,20 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """Initialize the user interface"""
         self.setWindowTitle(f"{APP_NAME} - {COMPANY_NAME}")
-        self.setGeometry(100, 50, 1400, 800)
+        
+        # ✅ SET RESPONSIVE WINDOW SIZE
+        # Get screen dimensions
+        screen = QApplication.primaryScreen().geometry()
+        
+        # Set minimum size to prevent UI breaking
+        self.setMinimumSize(1200, 700)
+        
+        # Start with 85% of screen size, centered
+        width = int(screen.width() * 0.85)
+        height = int(screen.height() * 0.85)
+        x = int((screen.width() - width) / 2)
+        y = int((screen.height() - height) / 2)
+        self.setGeometry(x, y, width, height)
         
         # Set global stylesheet
         self.setStyleSheet("""
@@ -58,6 +72,35 @@ class MainWindow(QMainWindow):
             }
             QLabel {
                 font-size: 12px;
+            }
+            /* ✅ SCROLLBAR STYLING */
+            QScrollBar:vertical {
+                border: none;
+                background: #f0f0f0;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #888;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #555;
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #f0f0f0;
+                height: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #888;
+                min-width: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #555;
             }
         """)
         
@@ -124,6 +167,17 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+        
+        # View menu (NEW)
+        view_menu = menubar.addMenu("&View")
+        
+        maximize_action = QAction("Maximize", self)
+        maximize_action.triggered.connect(self.showMaximized)
+        view_menu.addAction(maximize_action)
+        
+        normal_action = QAction("Normal Size", self)
+        normal_action.triggered.connect(self.showNormal)
+        view_menu.addAction(normal_action)
         
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -244,10 +298,13 @@ class MainWindow(QMainWindow):
         <br>
         <p><b>Features:</b></p>
         <ul>
-            <li>Bill Generation with Discount Management</li>
+            <li>GST & Non-GST Bill Generation</li>
+            <li>Sales Person Management</li>
             <li>Inventory Management with Batch Tracking</li>
+            <li>Real-time Stock Updates</li>
             <li>Sales Reports and Analytics</li>
             <li>Customer Management</li>
+            <li>Excel Export with Sales Data</li>
             <li>Database Backup and Restore</li>
         </ul>
         <br>

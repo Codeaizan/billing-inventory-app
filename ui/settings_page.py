@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QGroupBox, QLineEdit, QTextEdit,
                             QMessageBox, QListWidget, QFrame, QFileDialog,
                             QDialog, QFormLayout, QDialogButtonBox, QTableWidget,
-                            QTableWidgetItem, QHeaderView)
+                            QTableWidgetItem, QHeaderView, QScrollArea)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from modules.backup import backup_manager
@@ -10,6 +10,7 @@ from modules.auth import auth_manager
 from database.db_manager import db
 from config import APP_VERSION
 from utils.logger import logger
+
 
 class SettingsPage(QWidget):
     """Settings and configuration page"""
@@ -20,8 +21,18 @@ class SettingsPage(QWidget):
     
     def init_ui(self):
         """Initialize the user interface"""
-        main_layout = QVBoxLayout()
+        # ✅ CREATE SCROLL AREA
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setFrameShape(QFrame.NoFrame)
+        
+        # Content widget
+        content = QWidget()
+        main_layout = QVBoxLayout(content)
         main_layout.setSpacing(15)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
         # Header
         title = QLabel("Settings")
@@ -29,7 +40,7 @@ class SettingsPage(QWidget):
         title.setStyleSheet("color: #4CAF50;")
         main_layout.addWidget(title)
         
-        # Sales Person Management (NEW)
+        # Sales Person Management
         sales_person_group = self.create_sales_person_section()
         main_layout.addWidget(sales_person_group)
         
@@ -51,7 +62,15 @@ class SettingsPage(QWidget):
         
         main_layout.addStretch()
         
-        self.setLayout(main_layout)
+        # ✅ SET CONTENT TO SCROLL AREA
+        scroll.setWidget(content)
+        
+        # ✅ MAIN LAYOUT FOR PAGE
+        page_layout = QVBoxLayout()
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.addWidget(scroll)
+        
+        self.setLayout(page_layout)
         
         # Load initial data
         self.load_database_stats()
@@ -61,7 +80,21 @@ class SettingsPage(QWidget):
     def create_sales_person_section(self) -> QGroupBox:
         """Create sales person management section"""
         group = QGroupBox("Sales Person Management")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                color: #4CAF50;
+            }
+        """)
+        
         layout = QVBoxLayout()
+        layout.setSpacing(10)
         
         # Info label
         info_label = QLabel("Manage sales persons who can create bills")
@@ -76,22 +109,26 @@ class SettingsPage(QWidget):
         self.sales_person_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.sales_person_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.sales_person_table.hideColumn(0)  # Hide ID
-        self.sales_person_table.setMaximumHeight(200)
+        self.sales_person_table.setMinimumHeight(150)  # ✅ SET MINIMUM HEIGHT
+        self.sales_person_table.setMaximumHeight(250)  # ✅ SET MAXIMUM HEIGHT
         layout.addWidget(self.sales_person_table)
         
         # Buttons
         btn_layout = QHBoxLayout()
         
-        add_sp_btn = QPushButton("➕ Add Sales Person")
+        add_sp_btn = QPushButton("➕ Add")
         add_sp_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
+        add_sp_btn.setMinimumHeight(35)
         add_sp_btn.clicked.connect(self.add_sales_person)
         
-        edit_sp_btn = QPushButton("✏️ Edit Selected")
+        edit_sp_btn = QPushButton("✏️ Edit")
         edit_sp_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
+        edit_sp_btn.setMinimumHeight(35)
         edit_sp_btn.clicked.connect(self.edit_sales_person)
         
-        delete_sp_btn = QPushButton("🗑️ Delete Selected")
+        delete_sp_btn = QPushButton("🗑️ Delete")
         delete_sp_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
+        delete_sp_btn.setMinimumHeight(35)
         delete_sp_btn.clicked.connect(self.delete_sales_person)
         
         btn_layout.addWidget(add_sp_btn)
@@ -194,29 +231,48 @@ class SettingsPage(QWidget):
     def create_company_info(self) -> QGroupBox:
         """Create company information section"""
         group = QGroupBox("Company Information")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                color: #4CAF50;
+            }
+        """)
+        
         layout = QVBoxLayout()
+        layout.setSpacing(10)
         
         # Get current settings
         from utils.company_settings import company_settings
         settings = company_settings.get_all()
         
         # Create form
-        from PyQt5.QtWidgets import QFormLayout
         form = QFormLayout()
+        form.setSpacing(8)
         
         self.company_name_input = QLineEdit(settings.get('company_name', ''))
+        self.company_name_input.setMinimumHeight(30)
         form.addRow("Company Name:", self.company_name_input)
         
         self.company_tagline_input = QLineEdit(settings.get('company_tagline', ''))
+        self.company_tagline_input.setMinimumHeight(30)
         form.addRow("Tagline:", self.company_tagline_input)
         
         self.company_subtitle_input = QLineEdit(settings.get('company_subtitle', ''))
+        self.company_subtitle_input.setMinimumHeight(30)
         form.addRow("Subtitle:", self.company_subtitle_input)
         
         self.company_phone_input = QLineEdit(settings.get('phone', ''))
+        self.company_phone_input.setMinimumHeight(30)
         form.addRow("Phone:", self.company_phone_input)
         
         self.company_email_input = QLineEdit(settings.get('email', ''))
+        self.company_email_input.setMinimumHeight(30)
         form.addRow("Email:", self.company_email_input)
         
         self.factory_address_input = QTextEdit(settings.get('factory_address', ''))
@@ -224,18 +280,23 @@ class SettingsPage(QWidget):
         form.addRow("Address:", self.factory_address_input)
         
         self.bank_name_input = QLineEdit(settings.get('bank_name', ''))
+        self.bank_name_input.setMinimumHeight(30)
         form.addRow("Bank Name:", self.bank_name_input)
         
         self.bank_account_input = QLineEdit(settings.get('bank_account_no', ''))
+        self.bank_account_input.setMinimumHeight(30)
         form.addRow("Account No:", self.bank_account_input)
         
         self.bank_ifsc_input = QLineEdit(settings.get('bank_ifsc', ''))
+        self.bank_ifsc_input.setMinimumHeight(30)
         form.addRow("IFSC Code:", self.bank_ifsc_input)
         
         self.gstin_input = QLineEdit(settings.get('gstin', ''))
+        self.gstin_input.setMinimumHeight(30)
         form.addRow("GSTIN:", self.gstin_input)
         
         self.invoice_prefix_input = QLineEdit(settings.get('invoice_prefix', ''))
+        self.invoice_prefix_input.setMinimumHeight(30)
         form.addRow("Invoice Prefix:", self.invoice_prefix_input)
         
         layout.addLayout(form)
@@ -243,6 +304,7 @@ class SettingsPage(QWidget):
         # Save button
         save_btn = QPushButton("💾 Save Company Information")
         save_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; font-weight: bold;")
+        save_btn.setMinimumHeight(40)
         save_btn.clicked.connect(self.save_company_info)
         layout.addWidget(save_btn)
         
@@ -285,7 +347,21 @@ class SettingsPage(QWidget):
     def create_backup_section(self) -> QGroupBox:
         """Create backup and restore section"""
         group = QGroupBox("Backup & Restore")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                color: #4CAF50;
+            }
+        """)
+        
         layout = QVBoxLayout()
+        layout.setSpacing(10)
         
         # Backup list
         list_label = QLabel("Available Backups:")
@@ -293,26 +369,31 @@ class SettingsPage(QWidget):
         layout.addWidget(list_label)
         
         self.backup_list = QListWidget()
+        self.backup_list.setMinimumHeight(100)
         self.backup_list.setMaximumHeight(150)
         layout.addWidget(self.backup_list)
         
         # Buttons
         button_layout = QHBoxLayout()
         
-        create_backup_btn = QPushButton("📦 Create Backup")
+        create_backup_btn = QPushButton("📦 Create")
         create_backup_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
+        create_backup_btn.setMinimumHeight(35)
         create_backup_btn.clicked.connect(self.create_backup)
         
-        restore_backup_btn = QPushButton("♻️ Restore Selected")
+        restore_backup_btn = QPushButton("♻️ Restore")
         restore_backup_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
+        restore_backup_btn.setMinimumHeight(35)
         restore_backup_btn.clicked.connect(self.restore_backup)
         
-        delete_backup_btn = QPushButton("🗑️ Delete Selected")
+        delete_backup_btn = QPushButton("🗑️ Delete")
         delete_backup_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
+        delete_backup_btn.setMinimumHeight(35)
         delete_backup_btn.clicked.connect(self.delete_backup)
         
         refresh_btn = QPushButton("🔄 Refresh")
         refresh_btn.setStyleSheet("background-color: #FF9800; color: white; padding: 8px;")
+        refresh_btn.setMinimumHeight(35)
         refresh_btn.clicked.connect(self.load_backups)
         
         button_layout.addWidget(create_backup_btn)
@@ -408,14 +489,30 @@ class SettingsPage(QWidget):
     def create_stats_section(self) -> QGroupBox:
         """Create database statistics section"""
         group = QGroupBox("Database Statistics")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                color: #4CAF50;
+            }
+        """)
+        
         layout = QVBoxLayout()
+        layout.setSpacing(10)
         
         self.stats_label = QLabel("Loading...")
         self.stats_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 5px;")
+        self.stats_label.setMinimumHeight(150)
         layout.addWidget(self.stats_label)
         
         refresh_stats_btn = QPushButton("🔄 Refresh Statistics")
         refresh_stats_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
+        refresh_stats_btn.setMinimumHeight(35)
         refresh_stats_btn.clicked.connect(self.load_database_stats)
         layout.addWidget(refresh_stats_btn)
         
@@ -443,29 +540,47 @@ class SettingsPage(QWidget):
     def create_password_section(self) -> QGroupBox:
         """Create password change section"""
         group = QGroupBox("Change Password")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                color: #4CAF50;
+            }
+        """)
+        
         layout = QVBoxLayout()
+        layout.setSpacing(10)
         
         # Old password
         layout.addWidget(QLabel("Current Password:"))
         self.old_password = QLineEdit()
         self.old_password.setEchoMode(QLineEdit.Password)
+        self.old_password.setMinimumHeight(30)
         layout.addWidget(self.old_password)
         
         # New password
         layout.addWidget(QLabel("New Password:"))
         self.new_password = QLineEdit()
         self.new_password.setEchoMode(QLineEdit.Password)
+        self.new_password.setMinimumHeight(30)
         layout.addWidget(self.new_password)
         
         # Confirm password
         layout.addWidget(QLabel("Confirm Password:"))
         self.confirm_password = QLineEdit()
         self.confirm_password.setEchoMode(QLineEdit.Password)
+        self.confirm_password.setMinimumHeight(30)
         layout.addWidget(self.confirm_password)
         
         # Change button
         change_btn = QPushButton("🔒 Change Password")
         change_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px;")
+        change_btn.setMinimumHeight(40)
         change_btn.clicked.connect(self.change_password)
         layout.addWidget(change_btn)
         
@@ -516,21 +631,25 @@ class SalesPersonDialog(QDialog):
         self.setMinimumWidth(400)
         
         layout = QFormLayout()
+        layout.setSpacing(10)
         
         # Name
         self.name_input = QLineEdit()
+        self.name_input.setMinimumHeight(30)
         if self.sales_person:
             self.name_input.setText(self.sales_person['name'])
         layout.addRow("Name: *", self.name_input)
         
         # Phone
         self.phone_input = QLineEdit()
+        self.phone_input.setMinimumHeight(30)
         if self.sales_person:
             self.phone_input.setText(self.sales_person.get('phone', ''))
         layout.addRow("Phone:", self.phone_input)
         
         # Email
         self.email_input = QLineEdit()
+        self.email_input.setMinimumHeight(30)
         if self.sales_person:
             self.email_input.setText(self.sales_person.get('email', ''))
         layout.addRow("Email:", self.email_input)
