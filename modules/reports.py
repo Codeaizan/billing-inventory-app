@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from database.db_manager import db
 from utils.logger import logger
 
+
 class ReportManager:
     """Manages reporting and analytics"""
     
@@ -69,12 +70,21 @@ class ReportManager:
         for bill in bills:
             bill_details = db.get_bill_by_id(bill['id'])
             if bill_details:
+                # Get sales person name
+                sales_person_name = "Unknown"
+                if bill.get('sales_person_id'):
+                    sp = db.get_sales_person_by_id(bill['sales_person_id'])
+                    if sp:
+                        sales_person_name = sp['name']
+                
                 for item in bill_details['items']:
                     export_data.append({
                         'invoice_number': bill['invoice_number'],
                         'date': bill['created_at'],
+                        'sales_person': sales_person_name,
                         'customer_name': bill['customer_name'],
                         'customer_phone': bill['customer_phone'],
+                        'customer_gstin': bill.get('customer_gstin', ''),
                         'product_name': item['product_name'],
                         'hsn_code': item['hsn_code'],
                         'batch_number': item['batch_number'],
@@ -83,11 +93,15 @@ class ReportManager:
                         'discount_percent': item['discount_percent'],
                         'rate': item['rate'],
                         'amount': item['amount'],
-                        'payment_mode': bill['payment_mode'],
+                        'bill_type': 'GST' if bill.get('is_gst_bill', False) else 'Non-GST',
+                        'cgst': bill.get('cgst_amount', 0),
+                        'sgst': bill.get('sgst_amount', 0),
+                        'total_tax': bill.get('total_tax', 0),
                         'grand_total': bill['grand_total']
                     })
         
         return export_data
+
 
 # Create global instance
 report_manager = ReportManager()

@@ -7,9 +7,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from modules.gst_calculator import gst_calculator
-from config import (COMPANY_NAME, COMPANY_ADDRESS, COMPANY_PHONE, COMPANY_EMAIL,
-                   BANK_NAME, BANK_ACCOUNT_NO, BANK_IFSC, PDF_OUTPUT_DIR,
-                   COMPANY_TAGLINE, COMPANY_CERTIFICATIONS, INVOICE_NOTE)
+from config import PDF_OUTPUT_DIR
 from utils.logger import logger
 
 class PDFGenerator:
@@ -25,6 +23,9 @@ class PDFGenerator:
         Returns: (success, pdf_path)
         """
         try:
+            # Get company settings
+            from utils.company_settings import company_settings
+            
             # Create filename
             invoice_num = bill['invoice_number'].replace('/', '-')
             filename = f"Invoice_{invoice_num}.pdf"
@@ -45,18 +46,18 @@ class PDFGenerator:
             title_style = ParagraphStyle(
                 'CustomTitle',
                 parent=styles['Heading1'],
-                fontSize=24,
+                fontSize=22,
                 textColor=colors.HexColor('#4CAF50'),
                 alignment=TA_CENTER,
-                spaceAfter=5
+                spaceAfter=3
             )
             
             subtitle_style = ParagraphStyle(
                 'Subtitle',
                 parent=styles['Normal'],
-                fontSize=10,
+                fontSize=9,
                 alignment=TA_CENTER,
-                spaceAfter=3
+                spaceAfter=2
             )
             
             heading_style = ParagraphStyle(
@@ -68,18 +69,28 @@ class PDFGenerator:
             )
             
             # Company Header
-            elements.append(Paragraph(COMPANY_NAME, title_style))
-            elements.append(Paragraph(COMPANY_TAGLINE, subtitle_style))
-            elements.append(Paragraph(COMPANY_CERTIFICATIONS, subtitle_style))
+            elements.append(Paragraph(company_settings.get('company_name', 'Natural Health World'), title_style))
+            elements.append(Paragraph(company_settings.get('company_tagline', 'The Herbal Healing'), subtitle_style))
+            elements.append(Paragraph(company_settings.get('company_subtitle', ''), subtitle_style))
+            elements.append(Paragraph(company_settings.get('company_certifications', ''), subtitle_style))
             elements.append(Spacer(1, 0.1*inch))
             
             # Company details
-            company_details = f"{COMPANY_ADDRESS}<br/>{COMPANY_PHONE} | {COMPANY_EMAIL}"
+            company_details = f"{company_settings.get('factory_address', '')}<br/>"
+            company_details += f"{company_settings.get('phone', '')} | {company_settings.get('email', '')}"
+            
+            # Add GSTIN if available
+            gstin = company_settings.get('gstin', '')
+            if gstin:
+                company_details += f"<br/>GSTIN: {gstin}"
+            
             elements.append(Paragraph(company_details, subtitle_style))
             elements.append(Spacer(1, 0.2*inch))
             
             # Invoice title
-            invoice_title = Paragraph("<b>INVOICE</b>", heading_style)
+            is_gst_bill = bill.get('is_gst_bill', 0) == 1
+            invoice_title_text = "<b>TAX INVOICE</b>" if is_gst_bill else "<b>INVOICE</b>"
+            invoice_title = Paragraph(invoice_title_text, heading_style)
             elements.append(invoice_title)
             elements.append(Spacer(1, 0.1*inch))
             
@@ -88,7 +99,6 @@ class PDFGenerator:
             
             details_data = [
                 ['Invoice No:', bill['invoice_number'], 'Date:', invoice_date],
-                ['', '', 'Payment Mode:', bill['payment_mode']]
             ]
             
             details_table = Table(details_data, colWidths=[1.5*inch, 2*inch, 1*inch, 1.5*inch])
@@ -109,18 +119,17 @@ class PDFGenerator:
             ]
             
             if bill.get('customer_address'):
-                address_parts = bill['customer_address'].split(',')
-                for part in address_parts:
-                    bill_to_data.append([part.strip(), '', part.strip(), ''])
-            
-            if bill.get('customer_city'):
-                bill_to_data.append([bill['customer_city'], '', bill['customer_city'], ''])
-            
-            if bill.get('customer_pin_code'):
-                bill_to_data.append([f"PIN - {bill['customer_pin_code']}", '', f"PIN - {bill['customer_pin_code']}", ''])
+                address_parts = bill['customer_address'].split('\n')
+                for part in address_parts[:3]:  # Limit to 3 lines
+                    if part.strip():
+                        bill_to_data.append([part.strip(), '', part.strip(), ''])
             
             if bill.get('customer_phone'):
-                bill_to_data.append([f"PHONE - {bill['customer_phone']}", '', '', ''])
+                bill_to_data.append([f"Phone: {bill['customer_phone']}", '', '', ''])
+            
+            # Add customer GSTIN if GST bill
+            if is_gst_bill and bill.get('customer_gstin'):
+                bill_to_data.append([f"GSTIN: {bill['customer_gstin']}", '', f"GSTIN: {bill['customer_gstin']}", ''])
             
             bill_to_table = Table(bill_to_data, colWidths=[3*inch, 0.2*inch, 3*inch, 0.2*inch])
             bill_to_table.setStyle(TableStyle([
@@ -133,29 +142,48 @@ class PDFGenerator:
             elements.append(Spacer(1, 0.2*inch))
             
             # Items table
-            items_data = [
-                ['S.NO', 'DESCRIPTION OF GOODS', 'HSN CODE', 'BATCH NO', 'EXP',
-                 'QTY', 'MRP', 'DISC%', 'RATE', 'AMOUNT']
-            ]
-            
-            for idx, item in enumerate(bill['items'], 1):
-                items_data.append([
-                    str(idx),
-                    item['product_name'],
-                    item.get('hsn_code', ''),
-                    item.get('batch_number', ''),
-                    item.get('expiry_date', ''),
-                    str(item['quantity']),
-                    f"{item['mrp']:.0f}",
-                    f"{item['discount_percent']:.0f}",
-                    f"{item['rate']:.0f}",
-                    f"{item['amount']:.2f}"
+            if is_gst_bill:
+                # GST Bill - Show tax columns
+                items_data = [
+                    ['S.No', 'DESCRIPTION', 'HSN', 'QTY', 'MRP', 'DISC%', 'RATE', 'AMOUNT']
+                ]
+                
+                for idx, item in enumerate(bill['items'], 1):
+                    items_data.append([
+                        str(idx),
+                        item['product_name'],
+                        item.get('hsn_code', ''),
+                        str(item['quantity']),
+                        f"{item['mrp']:.0f}",
+                        f"{item['discount_percent']:.0f}",
+                        f"{item['rate']:.2f}",
+                        f"{item['amount']:.2f}"
+                    ])
+                
+                items_table = Table(items_data, colWidths=[
+                    0.4*inch, 2.5*inch, 0.7*inch, 0.5*inch, 0.6*inch, 0.6*inch, 0.7*inch, 0.9*inch
                 ])
-            
-            items_table = Table(items_data, colWidths=[
-                0.4*inch, 2.2*inch, 0.8*inch, 0.7*inch, 0.5*inch,
-                0.5*inch, 0.6*inch, 0.6*inch, 0.6*inch, 0.9*inch
-            ])
+            else:
+                # Non-GST Bill - Simple format
+                items_data = [
+                    ['S.No', 'DESCRIPTION OF GOODS', 'HSN', 'QTY', 'MRP', 'DISC%', 'RATE', 'AMOUNT']
+                ]
+                
+                for idx, item in enumerate(bill['items'], 1):
+                    items_data.append([
+                        str(idx),
+                        item['product_name'],
+                        item.get('hsn_code', ''),
+                        str(item['quantity']),
+                        f"{item['mrp']:.0f}",
+                        f"{item['discount_percent']:.0f}",
+                        f"{item['rate']:.0f}",
+                        f"{item['amount']:.2f}"
+                    ])
+                
+                items_table = Table(items_data, colWidths=[
+                    0.4*inch, 2.5*inch, 0.7*inch, 0.5*inch, 0.6*inch, 0.6*inch, 0.7*inch, 0.9*inch
+                ])
             
             items_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
@@ -174,17 +202,28 @@ class PDFGenerator:
             elements.append(items_table)
             elements.append(Spacer(1, 0.2*inch))
             
-            # Totals
-            totals_data = [
-                ['', '', 'TOTAL', f"{bill['subtotal']:.2f}"],
-                ['', '', 'ROUND OFF', f"{bill['round_off']:.2f}"],
-            ]
+            # Totals section
+            if is_gst_bill:
+                # GST Bill - Show tax breakdown
+                totals_data = [
+                    ['', '', 'SUBTOTAL (Taxable Amount)', f"{bill['subtotal']:.2f}"],
+                    ['', '', f"CGST @ 2.5%", f"{bill['cgst_amount']:.2f}"],
+                    ['', '', f"SGST @ 2.5%", f"{bill['sgst_amount']:.2f}"],
+                    ['', '', 'TOTAL TAX', f"{bill['total_tax']:.2f}"],
+                    ['', '', 'ROUND OFF', f"{bill['round_off']:.2f}"],
+                ]
+            else:
+                # Non-GST Bill - Simple totals
+                totals_data = [
+                    ['', '', 'SUBTOTAL', f"{bill['subtotal']:.2f}"],
+                    ['', '', 'ROUND OFF', f"{bill['round_off']:.2f}"],
+                ]
             
             # Convert grand total to words
             grand_total_int = int(bill['grand_total'])
             amount_in_words = gst_calculator.number_to_words(grand_total_int)
             
-            totals_data.append(['RUPEES:', amount_in_words, 'GRAND TOTAL', f"{bill['grand_total']:.2f}"])
+            totals_data.append(['RUPEES:', amount_in_words.upper(), 'GRAND TOTAL', f"{bill['grand_total']:.2f}"])
             
             totals_table = Table(totals_data, colWidths=[1*inch, 3.5*inch, 1.5*inch, 1*inch])
             totals_table.setStyle(TableStyle([
@@ -196,26 +235,37 @@ class PDFGenerator:
                 ('FONTSIZE', (0, 0), (-1, -1), 10),
                 ('FONTSIZE', (3, -1), (3, -1), 12),
                 ('TEXTCOLOR', (3, -1), (3, -1), colors.HexColor('#4CAF50')),
+                ('LINEABOVE', (2, -1), (3, -1), 2, colors.HexColor('#4CAF50')),
             ]))
             
             elements.append(totals_table)
             elements.append(Spacer(1, 0.3*inch))
             
             # Bank details
-            bank_info = f"<b>BANK NAME:</b> {BANK_NAME}<br/>" \
-                       f"<b>ACCOUNT NO:</b> {BANK_ACCOUNT_NO} - <b>IFSC CODE:</b> {BANK_IFSC}"
+            bank_info = f"<b>BANK NAME:</b> {company_settings.get('bank_name', '')}<br/>" \
+                       f"<b>ACCOUNT NO:</b> {company_settings.get('bank_account_no', '')} - " \
+                       f"<b>IFSC CODE:</b> {company_settings.get('bank_ifsc', '')}"
             elements.append(Paragraph(bank_info, styles['Normal']))
             elements.append(Spacer(1, 0.2*inch))
             
             # Note
-            if INVOICE_NOTE:
+            invoice_note = company_settings.get('invoice_note', '')
+            if invoice_note:
                 note_style = ParagraphStyle('Note', parent=styles['Normal'], fontSize=9, textColor=colors.grey)
-                elements.append(Paragraph(INVOICE_NOTE, note_style))
+                elements.append(Paragraph(invoice_note, note_style))
+                elements.append(Spacer(1, 0.2*inch))
+            
+            # Terms and conditions for GST bills
+            if is_gst_bill:
+                terms_text = "<b>Terms & Conditions:</b><br/>1. Goods once sold will not be taken back.<br/>" \
+                           "2. Interest @ 18% will be charged if payment is not made within 7 days."
+                terms_style = ParagraphStyle('Terms', parent=styles['Normal'], fontSize=8)
+                elements.append(Paragraph(terms_text, terms_style))
                 elements.append(Spacer(1, 0.2*inch))
             
             # Signature
             signature_style = ParagraphStyle('Signature', parent=styles['Normal'], alignment=TA_RIGHT)
-            elements.append(Paragraph(f"<b>FOR, {COMPANY_NAME}</b>", signature_style))
+            elements.append(Paragraph(f"<b>FOR, {company_settings.get('company_name', 'NATURAL HEALTH WORLD')}</b>", signature_style))
             elements.append(Spacer(1, 0.5*inch))
             elements.append(Paragraph("<b>AUTHORISED SIGNATORY</b>", signature_style))
             
@@ -227,6 +277,8 @@ class PDFGenerator:
             
         except Exception as e:
             logger.error(f"Error generating PDF: {e}")
+            import traceback
+            traceback.print_exc()
             return False, None
 
 # Create global instance

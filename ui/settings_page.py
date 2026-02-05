@@ -1,14 +1,14 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QGroupBox, QLineEdit, QTextEdit,
-                            QMessageBox, QListWidget, QFrame, QFileDialog)
+                            QMessageBox, QListWidget, QFrame, QFileDialog,
+                            QDialog, QFormLayout, QDialogButtonBox, QTableWidget,
+                            QTableWidgetItem, QHeaderView)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from modules.backup import backup_manager
 from modules.auth import auth_manager
 from database.db_manager import db
-from config import (COMPANY_NAME, COMPANY_ADDRESS, COMPANY_PHONE, 
-                   COMPANY_EMAIL, BANK_NAME, BANK_ACCOUNT_NO, BANK_IFSC,
-                   APP_VERSION)
+from config import APP_VERSION
 from utils.logger import logger
 
 class SettingsPage(QWidget):
@@ -28,6 +28,10 @@ class SettingsPage(QWidget):
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setStyleSheet("color: #4CAF50;")
         main_layout.addWidget(title)
+        
+        # Sales Person Management (NEW)
+        sales_person_group = self.create_sales_person_section()
+        main_layout.addWidget(sales_person_group)
         
         # Company Information
         company_group = self.create_company_info()
@@ -52,6 +56,140 @@ class SettingsPage(QWidget):
         # Load initial data
         self.load_database_stats()
         self.load_backups()
+        self.load_sales_persons()
+    
+    def create_sales_person_section(self) -> QGroupBox:
+        """Create sales person management section"""
+        group = QGroupBox("Sales Person Management")
+        layout = QVBoxLayout()
+        
+        # Info label
+        info_label = QLabel("Manage sales persons who can create bills")
+        info_label.setStyleSheet("color: #666; font-style: italic;")
+        layout.addWidget(info_label)
+        
+        # Sales persons table
+        self.sales_person_table = QTableWidget()
+        self.sales_person_table.setColumnCount(4)
+        self.sales_person_table.setHorizontalHeaderLabels(["ID", "Name", "Phone", "Status"])
+        self.sales_person_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.sales_person_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.sales_person_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.sales_person_table.hideColumn(0)  # Hide ID
+        self.sales_person_table.setMaximumHeight(200)
+        layout.addWidget(self.sales_person_table)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        
+        add_sp_btn = QPushButton("➕ Add Sales Person")
+        add_sp_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
+        add_sp_btn.clicked.connect(self.add_sales_person)
+        
+        edit_sp_btn = QPushButton("✏️ Edit Selected")
+        edit_sp_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
+        edit_sp_btn.clicked.connect(self.edit_sales_person)
+        
+        delete_sp_btn = QPushButton("🗑️ Delete Selected")
+        delete_sp_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
+        delete_sp_btn.clicked.connect(self.delete_sales_person)
+        
+        btn_layout.addWidget(add_sp_btn)
+        btn_layout.addWidget(edit_sp_btn)
+        btn_layout.addWidget(delete_sp_btn)
+        btn_layout.addStretch()
+        
+        layout.addLayout(btn_layout)
+        
+        group.setLayout(layout)
+        return group
+    
+    def load_sales_persons(self):
+        """Load sales persons into table"""
+        sales_persons = db.get_all_sales_persons(active_only=False)
+        
+        self.sales_person_table.setRowCount(len(sales_persons))
+        
+        for row, sp in enumerate(sales_persons):
+            self.sales_person_table.setItem(row, 0, QTableWidgetItem(str(sp['id'])))
+            self.sales_person_table.setItem(row, 1, QTableWidgetItem(sp['name']))
+            self.sales_person_table.setItem(row, 2, QTableWidgetItem(sp.get('phone', '')))
+            
+            status = "Active" if sp['is_active'] else "Inactive"
+            status_item = QTableWidgetItem(status)
+            if not sp['is_active']:
+                status_item.setForeground(Qt.red)
+            self.sales_person_table.setItem(row, 3, status_item)
+    
+    def add_sales_person(self):
+        """Add new sales person"""
+        dialog = SalesPersonDialog(self)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            name, phone, email = dialog.get_data()
+            
+            success, message, sp_id = db.add_sales_person(name, phone, email)
+            
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.load_sales_persons()
+            else:
+                QMessageBox.warning(self, "Error", message)
+    
+    def edit_sales_person(self):
+        """Edit selected sales person"""
+        current_row = self.sales_person_table.currentRow()
+        
+        if current_row < 0:
+            QMessageBox.warning(self, "No Selection", "Please select a sales person to edit")
+            return
+        
+        sp_id = int(self.sales_person_table.item(current_row, 0).text())
+        sp_data = db.get_sales_person_by_id(sp_id)
+        
+        if not sp_data:
+            QMessageBox.warning(self, "Error", "Sales person not found")
+            return
+        
+        dialog = SalesPersonDialog(self, sp_data)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            name, phone, email = dialog.get_data()
+            
+            success, message = db.update_sales_person(sp_id, name, phone, email)
+            
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.load_sales_persons()
+            else:
+                QMessageBox.warning(self, "Error", message)
+    
+    def delete_sales_person(self):
+        """Delete selected sales person"""
+        current_row = self.sales_person_table.currentRow()
+        
+        if current_row < 0:
+            QMessageBox.warning(self, "No Selection", "Please select a sales person to delete")
+            return
+        
+        sp_id = int(self.sales_person_table.item(current_row, 0).text())
+        sp_name = self.sales_person_table.item(current_row, 1).text()
+        
+        reply = QMessageBox.question(
+            self, "Delete Sales Person",
+            f"Are you sure you want to delete '{sp_name}'?\n\n"
+            "Note: If this person has existing bills, they will be deactivated instead of deleted.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            success, message = db.delete_sales_person(sp_id)
+            
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.load_sales_persons()
+            else:
+                QMessageBox.warning(self, "Error", message)
     
     def create_company_info(self) -> QGroupBox:
         """Create company information section"""
@@ -63,7 +201,7 @@ class SettingsPage(QWidget):
         settings = company_settings.get_all()
         
         # Create form
-        from PyQt5.QtWidgets import QFormLayout, QTextEdit
+        from PyQt5.QtWidgets import QFormLayout
         form = QFormLayout()
         
         self.company_name_input = QLineEdit(settings.get('company_name', ''))
@@ -143,7 +281,6 @@ class SettingsPage(QWidget):
             QMessageBox.information(self, "Success", "Company information saved successfully!")
         else:
             QMessageBox.warning(self, "Error", "Failed to save company information")
-
     
     def create_backup_section(self) -> QGroupBox:
         """Create backup and restore section"""
@@ -184,55 +321,6 @@ class SettingsPage(QWidget):
         button_layout.addWidget(refresh_btn)
         
         layout.addLayout(button_layout)
-        
-        group.setLayout(layout)
-        return group
-    
-    def create_stats_section(self) -> QGroupBox:
-        """Create database statistics section"""
-        group = QGroupBox("Database Statistics")
-        layout = QVBoxLayout()
-        
-        self.stats_label = QLabel("Loading...")
-        self.stats_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 5px;")
-        layout.addWidget(self.stats_label)
-        
-        refresh_stats_btn = QPushButton("🔄 Refresh Statistics")
-        refresh_stats_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
-        refresh_stats_btn.clicked.connect(self.load_database_stats)
-        layout.addWidget(refresh_stats_btn)
-        
-        group.setLayout(layout)
-        return group
-    
-    def create_password_section(self) -> QGroupBox:
-        """Create password change section"""
-        group = QGroupBox("Change Password")
-        layout = QVBoxLayout()
-        
-        # Old password
-        layout.addWidget(QLabel("Current Password:"))
-        self.old_password = QLineEdit()
-        self.old_password.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.old_password)
-        
-        # New password
-        layout.addWidget(QLabel("New Password:"))
-        self.new_password = QLineEdit()
-        self.new_password.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.new_password)
-        
-        # Confirm password
-        layout.addWidget(QLabel("Confirm Password:"))
-        self.confirm_password = QLineEdit()
-        self.confirm_password.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self.confirm_password)
-        
-        # Change button
-        change_btn = QPushButton("🔒 Change Password")
-        change_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px;")
-        change_btn.clicked.connect(self.change_password)
-        layout.addWidget(change_btn)
         
         group.setLayout(layout)
         return group
@@ -317,6 +405,23 @@ class SettingsPage(QWidget):
             else:
                 QMessageBox.warning(self, "Error", message)
     
+    def create_stats_section(self) -> QGroupBox:
+        """Create database statistics section"""
+        group = QGroupBox("Database Statistics")
+        layout = QVBoxLayout()
+        
+        self.stats_label = QLabel("Loading...")
+        self.stats_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 5px;")
+        layout.addWidget(self.stats_label)
+        
+        refresh_stats_btn = QPushButton("🔄 Refresh Statistics")
+        refresh_stats_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px;")
+        refresh_stats_btn.clicked.connect(self.load_database_stats)
+        layout.addWidget(refresh_stats_btn)
+        
+        group.setLayout(layout)
+        return group
+    
     def load_database_stats(self):
         """Load database statistics"""
         stats = db.get_database_stats()
@@ -329,10 +434,43 @@ class SettingsPage(QWidget):
         Bills: {stats.get('bills', 0)}<br>
         Bill Items: {stats.get('bill_items', 0)}<br>
         Stock History: {stats.get('stock_history', 0)}<br>
-        Users: {stats.get('users', 0)}
+        Users: {stats.get('users', 0)}<br>
+        Sales Persons: {stats.get('sales_persons', 0)}
         """
         
         self.stats_label.setText(stats_text)
+    
+    def create_password_section(self) -> QGroupBox:
+        """Create password change section"""
+        group = QGroupBox("Change Password")
+        layout = QVBoxLayout()
+        
+        # Old password
+        layout.addWidget(QLabel("Current Password:"))
+        self.old_password = QLineEdit()
+        self.old_password.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.old_password)
+        
+        # New password
+        layout.addWidget(QLabel("New Password:"))
+        self.new_password = QLineEdit()
+        self.new_password.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.new_password)
+        
+        # Confirm password
+        layout.addWidget(QLabel("Confirm Password:"))
+        self.confirm_password = QLineEdit()
+        self.confirm_password.setEchoMode(QLineEdit.Password)
+        layout.addWidget(self.confirm_password)
+        
+        # Change button
+        change_btn = QPushButton("🔒 Change Password")
+        change_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px;")
+        change_btn.clicked.connect(self.change_password)
+        layout.addWidget(change_btn)
+        
+        group.setLayout(layout)
+        return group
     
     def change_password(self):
         """Change user password"""
@@ -361,3 +499,55 @@ class SettingsPage(QWidget):
             self.confirm_password.clear()
         else:
             QMessageBox.warning(self, "Error", message)
+
+
+class SalesPersonDialog(QDialog):
+    """Dialog for adding/editing sales person"""
+    
+    def __init__(self, parent=None, sales_person=None):
+        super().__init__(parent)
+        self.sales_person = sales_person
+        self.is_edit = sales_person is not None
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize dialog UI"""
+        self.setWindowTitle("Edit Sales Person" if self.is_edit else "Add Sales Person")
+        self.setMinimumWidth(400)
+        
+        layout = QFormLayout()
+        
+        # Name
+        self.name_input = QLineEdit()
+        if self.sales_person:
+            self.name_input.setText(self.sales_person['name'])
+        layout.addRow("Name: *", self.name_input)
+        
+        # Phone
+        self.phone_input = QLineEdit()
+        if self.sales_person:
+            self.phone_input.setText(self.sales_person.get('phone', ''))
+        layout.addRow("Phone:", self.phone_input)
+        
+        # Email
+        self.email_input = QLineEdit()
+        if self.sales_person:
+            self.email_input.setText(self.sales_person.get('email', ''))
+        layout.addRow("Email:", self.email_input)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        
+        layout.addRow(buttons)
+        
+        self.setLayout(layout)
+    
+    def get_data(self):
+        """Get sales person data from form"""
+        return (
+            self.name_input.text().strip(),
+            self.phone_input.text().strip(),
+            self.email_input.text().strip()
+        )

@@ -250,6 +250,110 @@ class DatabaseManager:
     
     # ============= CUSTOMER OPERATIONS =============
     
+        # ============= CUSTOMER OPERATIONS =============
+    
+    def search_customers(self, search_text: str) -> List[dict]:
+        """Search customers by name or phone"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT * FROM customers 
+                    WHERE name LIKE ? OR phone LIKE ?
+                    ORDER BY name
+                    LIMIT 20
+                """, (f"%{search_text}%", f"%{search_text}%"))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Error searching customers: {e}")
+            return []
+    
+    def get_customer_by_phone(self, phone: str) -> Optional[dict]:
+        """Get customer by phone number"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT * FROM customers WHERE phone = ?",
+                    (phone,)
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error getting customer by phone: {e}")
+            return None
+    
+    def add_or_update_customer(self, customer_data: dict) -> Tuple[bool, str, Optional[int]]:
+        """
+        Add new customer or update existing one
+        Returns: (success, message, customer_id)
+        """
+        try:
+            phone = customer_data.get('phone', '').strip()
+            
+            # Check if customer exists by phone
+            existing_customer = None
+            if phone:
+                existing_customer = self.get_customer_by_phone(phone)
+            
+            with self.get_connection() as conn:
+                if existing_customer:
+                    # Update existing customer
+                    conn.execute("""
+                        UPDATE customers 
+                        SET name=?, email=?, address=?, city=?, state=?, 
+                            pin_code=?, gstin=?, updated_at=?
+                        WHERE id=?
+                    """, (
+                        customer_data['name'],
+                        customer_data.get('email', ''),
+                        customer_data.get('address', ''),
+                        customer_data.get('city', ''),
+                        customer_data.get('state', ''),
+                        customer_data.get('pin_code', ''),
+                        customer_data.get('gstin', ''),
+                        datetime.now(),
+                        existing_customer['id']
+                    ))
+                    conn.commit()
+                    logger.info(f"Customer updated: {customer_data['name']}")
+                    return True, "Customer updated", existing_customer['id']
+                else:
+                    # Add new customer
+                    cursor = conn.execute("""
+                        INSERT INTO customers 
+                        (name, phone, email, address, city, state, pin_code, gstin)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        customer_data['name'],
+                        customer_data.get('phone', ''),
+                        customer_data.get('email', ''),
+                        customer_data.get('address', ''),
+                        customer_data.get('city', ''),
+                        customer_data.get('state', ''),
+                        customer_data.get('pin_code', ''),
+                        customer_data.get('gstin', '')
+                    ))
+                    conn.commit()
+                    logger.info(f"Customer added: {customer_data['name']}")
+                    return True, "Customer added", cursor.lastrowid
+                    
+        except Exception as e:
+            logger.error(f"Error adding/updating customer: {e}")
+            return False, str(e), None
+    
+    def get_customer_bills(self, customer_id: int) -> List[dict]:
+        """Get all bills for a customer"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT * FROM bills 
+                    WHERE customer_id = ?
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Error getting customer bills: {e}")
+            return []
+
     def add_customer(self, customer_data: dict) -> Optional[int]:
         """Add a new customer"""
         try:
@@ -339,79 +443,120 @@ class DatabaseManager:
             # Fallback to timestamp-based number
             return f"NH/{int(datetime.now().timestamp())}/00-00"
     
-    def create_bill(self, bill_data: dict, items: List[dict]) -> Optional[int]:
-        """Create a new bill with items and update stock"""
+    def create_bill(self, bill_data: dict, items: List[dict]) -> Tuple[bool, str, Optional[int]]:
+        """
+        Create a new bill with items
+        Returns: (success, message, bill_id)
+        """
         try:
             with self.get_connection() as conn:
                 # Insert bill
                 cursor = conn.execute("""
-                    INSERT INTO bills (invoice_number, customer_id, customer_name, 
-                                     customer_phone, customer_address, customer_city,
-                                     customer_state, customer_pin_code, customer_gstin,
-                                     subtotal, total_discount, round_off, grand_total,
-                                     payment_mode, notes, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO bills (
+                        invoice_number, customer_id, customer_name, customer_phone,
+                        customer_address, customer_city, customer_pin_code, customer_gstin,
+                        sales_person_id, is_gst_bill, subtotal, discount_amount, 
+                        taxable_amount, cgst_amount, sgst_amount, total_tax,
+                        round_off, grand_total, created_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    bill_data['invoice_number'], bill_data.get('customer_id'),
-                    bill_data['customer_name'], bill_data.get('customer_phone'),
-                    bill_data.get('customer_address'), bill_data.get('customer_city'),
-                    bill_data.get('customer_state'), bill_data.get('customer_pin_code'),
-                    bill_data.get('customer_gstin'), bill_data['subtotal'],
-                    bill_data.get('total_discount', 0), bill_data.get('round_off', 0),
-                    bill_data['grand_total'], bill_data.get('payment_mode', 'Cash'),
-                    bill_data.get('notes'), bill_data.get('created_by')
+                    bill_data['invoice_number'],
+                    bill_data.get('customer_id'),
+                    bill_data['customer_name'],
+                    bill_data.get('customer_phone', ''),
+                    bill_data.get('customer_address', ''),
+                    bill_data.get('customer_city', ''),
+                    bill_data.get('customer_pin_code', ''),
+                    bill_data.get('customer_gstin', ''),
+                    bill_data['sales_person_id'],
+                    bill_data.get('is_gst_bill', 0),
+                    bill_data['subtotal'],
+                    bill_data.get('discount_amount', 0.0),
+                    bill_data.get('taxable_amount', 0.0),
+                    bill_data.get('cgst_amount', 0.0),
+                    bill_data.get('sgst_amount', 0.0),
+                    bill_data.get('total_tax', 0.0),
+                    bill_data.get('round_off', 0.0),
+                    bill_data['grand_total'],
+                    bill_data.get('created_by')
                 ))
                 
                 bill_id = cursor.lastrowid
                 
-                # Insert bill items and update stock
+                # Insert bill items
                 for item in items:
                     conn.execute("""
-                        INSERT INTO bill_items (bill_id, product_id, product_name, 
-                                              hsn_code, batch_number, expiry_date,
-                                              quantity, mrp, discount_percent, rate, amount)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO bill_items (
+                            bill_id, product_id, product_name, hsn_code, batch_number,
+                            expiry_date, quantity, unit, mrp, discount_percent, rate, amount
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        bill_id, item['product_id'], item['product_name'],
-                        item.get('hsn_code'), item.get('batch_number'),
-                        item.get('expiry_date'), item['quantity'],
-                        item['mrp'], item['discount_percent'],
-                        item['rate'], item['amount']
+                        bill_id,
+                        item['product_id'],
+                        item['product_name'],
+                        item.get('hsn_code', ''),
+                        item.get('batch_number', ''),
+                        item.get('expiry_date', ''),
+                        item['quantity'],
+                        item.get('unit', 'Nos'),
+                        item['mrp'],
+                        item.get('discount_percent', 0.0),
+                        item['rate'],
+                        item['amount']
                     ))
                     
                     # Update product stock
                     conn.execute("""
                         UPDATE products 
-                        SET current_stock = current_stock - ?, updated_at = ?
+                        SET current_stock = current_stock - ?,
+                            updated_at = ?
                         WHERE id = ?
                     """, (item['quantity'], datetime.now(), item['product_id']))
                     
-                    # Log stock history
-                    cursor_stock = conn.execute(
-                        "SELECT current_stock FROM products WHERE id = ?",
-                        (item['product_id'],)
-                    )
-                    new_stock = cursor_stock.fetchone()['current_stock']
-                    
+                    # Record stock history
                     conn.execute("""
-                        INSERT INTO stock_history 
-                        (product_id, batch_number, change_type, quantity_change, 
-                         old_stock, new_stock, reference_id, notes)
-                        VALUES (?, ?, 'SALE', ?, ?, ?, ?, ?)
+                        INSERT INTO stock_history (
+                            product_id, change_type, quantity_before, quantity_after,
+                            quantity_changed, bill_id, notes, created_by
+                        )
+                        SELECT 
+                            ?, 'SALE', current_stock + ?, current_stock,
+                            ?, ?, 'Stock reduced due to sale', ?
+                        FROM products WHERE id = ?
                     """, (
-                        item['product_id'], item.get('batch_number'),
-                        -item['quantity'], new_stock + item['quantity'],
-                        new_stock, bill_id, f"Sale - Invoice {bill_data['invoice_number']}"
+                        item['product_id'],
+                        item['quantity'],
+                        -item['quantity'],
+                        bill_id,
+                        bill_data.get('created_by'),
+                        item['product_id']
                     ))
                 
                 conn.commit()
-                logger.info(f"Bill created: {bill_data['invoice_number']} with {len(items)} items")
-                return bill_id
+                logger.info(f"Bill created: {bill_data['invoice_number']}")
+                return True, "Bill created successfully", bill_id
                 
         except Exception as e:
             logger.error(f"Error creating bill: {e}")
+            return False, str(e), None
+
+    def get_last_invoice_number(self, pattern: str) -> Optional[str]:
+        """
+        Get last invoice number matching pattern
+        Pattern example: "NH/%/25-26"
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT invoice_number FROM bills WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1",
+                    (pattern,)
+                )
+                row = cursor.fetchone()
+                return row['invoice_number'] if row else None
+        except Exception as e:
+            logger.error(f"Error getting last invoice number: {e}")
             return None
-    
+
     def get_bill_by_id(self, bill_id: int) -> Optional[dict]:
         """Get bill by ID with items"""
         try:
@@ -565,47 +710,28 @@ class DatabaseManager:
     
     # ============= REPORTING & ANALYTICS =============
     
-    def get_sales_summary(self, start_date: Optional[str] = None, 
-                         end_date: Optional[str] = None) -> dict:
-        """Get sales summary for a date range"""
+    def get_sales_summary(self, start_date: str, end_date: str) -> dict:
+        """Get sales summary for date range"""
         try:
             with self.get_connection() as conn:
-                query = """
+                cursor = conn.execute("""
                     SELECT 
                         COUNT(*) as total_bills,
-                        SUM(grand_total) as total_sales,
-                        SUM(total_discount) as total_discount,
-                        AVG(grand_total) as avg_bill_value
+                        COALESCE(SUM(subtotal), 0) as total_sales,
+                        COALESCE(SUM(discount_amount), 0) as total_discount,
+                        COALESCE(SUM(total_tax), 0) as total_tax,
+                        COALESCE(SUM(grand_total), 0) as total_revenue,
+                        COALESCE(AVG(grand_total), 0) as avg_bill_value
                     FROM bills
-                    WHERE 1=1
-                """
-                params = []
+                    WHERE DATE(created_at) BETWEEN ? AND ?
+                """, (start_date, end_date))
                 
-                if start_date:
-                    query += " AND DATE(created_at) >= ?"
-                    params.append(start_date)
-                
-                if end_date:
-                    query += " AND DATE(created_at) <= ?"
-                    params.append(end_date)
-                
-                cursor = conn.execute(query, params)
                 result = cursor.fetchone()
-                
-                return {
-                    'total_bills': result['total_bills'] or 0,
-                    'total_sales': result['total_sales'] or 0.0,
-                    'total_discount': result['total_discount'] or 0.0,
-                    'avg_bill_value': result['avg_bill_value'] or 0.0
-                }
+                return dict(result) if result else {}
         except Exception as e:
             logger.error(f"Error getting sales summary: {e}")
-            return {
-                'total_bills': 0,
-                'total_sales': 0.0,
-                'total_discount': 0.0,
-                'avg_bill_value': 0.0
-            }
+            return {}
+
     
     def get_top_selling_products(self, limit: int = 10, 
                                  start_date: Optional[str] = None,
@@ -749,28 +875,160 @@ class DatabaseManager:
     def get_database_stats(self) -> dict:
         """Get database statistics"""
         try:
+            import os
+            
+            stats = {}
+            
+            # Database file size
+            db_path = self.db_path
+            if os.path.exists(db_path):
+                size_bytes = os.path.getsize(db_path)
+                stats['db_size_mb'] = round(size_bytes / (1024 * 1024), 2)
+            else:
+                stats['db_size_mb'] = 0
+            
+            # Table counts
             with self.get_connection() as conn:
-                stats = {}
-                
-                # Count tables
-                tables = ['products', 'customers', 'bills', 'bill_items', 
-                         'product_batches', 'users', 'stock_history']
+                tables = [
+                    'products', 'customers', 'bills', 'bill_items',
+                    'stock_history', 'users', 'sales_persons'
+                ]
                 
                 for table in tables:
                     cursor = conn.execute(f"SELECT COUNT(*) as count FROM {table}")
                     stats[table] = cursor.fetchone()['count']
-                
-                # Database file size
-                import os
-                stats['db_size_mb'] = round(os.path.getsize(self.db_path) / (1024 * 1024), 2)
-                
-                return stats
+            
+            return stats
+            
         except Exception as e:
             logger.error(f"Error getting database stats: {e}")
             return {}
+
     
     # ============= COMPANY SETTINGS OPERATIONS =============
     
+    def get_all_sales_persons(self, active_only: bool = True) -> List[dict]:
+        """Get all sales persons"""
+        try:
+            with self.get_connection() as conn:
+                if active_only:
+                    cursor = conn.execute(
+                        "SELECT * FROM sales_persons WHERE is_active = 1 ORDER BY name"
+                    )
+                else:
+                    cursor = conn.execute(
+                        "SELECT * FROM sales_persons ORDER BY name"
+                    )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Error getting sales persons: {e}")
+            return []
+    
+    def get_sales_person_by_id(self, sales_person_id: int) -> Optional[dict]:
+        """Get sales person by ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT * FROM sales_persons WHERE id = ?",
+                    (sales_person_id,)
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Error getting sales person: {e}")
+            return None
+    
+    def add_sales_person(self, name: str, phone: str = "", email: str = "") -> Tuple[bool, str, Optional[int]]:
+        """Add new sales person"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "INSERT INTO sales_persons (name, phone, email) VALUES (?, ?, ?)",
+                    (name.strip(), phone.strip(), email.strip())
+                )
+                conn.commit()
+                logger.info(f"Sales person added: {name}")
+                return True, "Sales person added successfully", cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return False, "Sales person with this name already exists", None
+        except Exception as e:
+            logger.error(f"Error adding sales person: {e}")
+            return False, str(e), None
+    
+    def update_sales_person(self, sales_person_id: int, name: str, phone: str = "", email: str = "") -> Tuple[bool, str]:
+        """Update sales person"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    "UPDATE sales_persons SET name=?, phone=?, email=? WHERE id=?",
+                    (name.strip(), phone.strip(), email.strip(), sales_person_id)
+                )
+                conn.commit()
+                logger.info(f"Sales person updated: {name}")
+                return True, "Sales person updated successfully"
+        except sqlite3.IntegrityError:
+            return False, "Sales person with this name already exists"
+        except Exception as e:
+            logger.error(f"Error updating sales person: {e}")
+            return False, str(e)
+    
+    def delete_sales_person(self, sales_person_id: int) -> Tuple[bool, str]:
+        """Delete (deactivate) sales person"""
+        try:
+            # Check if sales person has bills
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) as count FROM bills WHERE sales_person_id = ?",
+                    (sales_person_id,)
+                )
+                count = cursor.fetchone()['count']
+                
+                if count > 0:
+                    # Deactivate instead of delete
+                    conn.execute(
+                        "UPDATE sales_persons SET is_active = 0 WHERE id = ?",
+                        (sales_person_id,)
+                    )
+                    conn.commit()
+                    logger.info(f"Sales person deactivated: ID {sales_person_id}")
+                    return True, "Sales person deactivated (has existing bills)"
+                else:
+                    # Safe to delete
+                    conn.execute(
+                        "DELETE FROM sales_persons WHERE id = ?",
+                        (sales_person_id,)
+                    )
+                    conn.commit()
+                    logger.info(f"Sales person deleted: ID {sales_person_id}")
+                    return True, "Sales person deleted successfully"
+        except Exception as e:
+            logger.error(f"Error deleting sales person: {e}")
+            return False, str(e)
+    
+    def get_sales_person_performance(self, sales_person_id: int, start_date: str, end_date: str) -> dict:
+        """Get sales performance for a sales person"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT 
+                        COUNT(*) as total_bills,
+                        COALESCE(SUM(grand_total), 0) as total_revenue,
+                        COALESCE(AVG(grand_total), 0) as avg_bill_value
+                    FROM bills 
+                    WHERE sales_person_id = ?
+                    AND DATE(created_at) BETWEEN ? AND ?
+                """, (sales_person_id, start_date, end_date))
+                
+                result = cursor.fetchone()
+                return dict(result) if result else {
+                    'total_bills': 0,
+                    'total_revenue': 0.0,
+                    'avg_bill_value': 0.0
+                }
+        except Exception as e:
+            logger.error(f"Error getting sales person performance: {e}")
+            return {'total_bills': 0, 'total_revenue': 0.0, 'avg_bill_value': 0.0}
+
     def get_company_settings(self) -> dict:
         """Get company settings"""
         try:

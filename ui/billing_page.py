@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                             QComboBox, QSpinBox, QTextEdit, QMessageBox, QFrame,
-                            QHeaderView, QCompleter, QGroupBox, QGridLayout)
+                            QHeaderView, QCompleter, QGroupBox, QGridLayout, QCheckBox,
+                            QDialog, QListWidget, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QStringListModel
 from PyQt5.QtGui import QFont, QColor
 from modules.billing import billing_manager
@@ -9,7 +10,7 @@ from modules.inventory import inventory_manager
 from modules.gst_calculator import gst_calculator
 from modules.auth import auth_manager
 from database.db_manager import db
-from utils.constants import PAYMENT_MODES
+from utils.signals import app_signals
 from utils.logger import logger
 
 class BillingPage(QWidget):
@@ -19,6 +20,10 @@ class BillingPage(QWidget):
         super().__init__()
         self.init_ui()
         self.load_products()
+        self.load_sales_persons()
+        
+        # ADD THIS LINE - Connect signal for real-time updates
+        app_signals.inventory_updated.connect(self.load_products)
     
     def init_ui(self):
         """Initialize the user interface"""
@@ -174,9 +179,43 @@ class BillingPage(QWidget):
         title.setStyleSheet("color: #4CAF50;")
         layout.addWidget(title)
         
+        # Sales Person Selection
+        sp_layout = QHBoxLayout()
+        sp_layout.addWidget(QLabel("Sales Person: *"))
+        self.sales_person_combo = QComboBox()
+        self.sales_person_combo.setStyleSheet("padding: 5px; font-weight: bold;")
+        sp_layout.addWidget(self.sales_person_combo, 1)
+        layout.addLayout(sp_layout)
+        
+        # GST Bill Toggle
+        gst_layout = QHBoxLayout()
+        self.gst_bill_checkbox = QCheckBox("GST Bill (5% Tax)")
+        self.gst_bill_checkbox.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.gst_bill_checkbox.stateChanged.connect(self.on_gst_toggle)
+        gst_layout.addWidget(self.gst_bill_checkbox)
+        gst_layout.addStretch()
+        layout.addLayout(gst_layout)
+        
         # Customer info
         customer_group = QGroupBox("Customer Information")
         customer_layout = QVBoxLayout()
+        
+        # Customer search (NEW)
+        search_customer_layout = QHBoxLayout()
+        search_customer_label = QLabel("Search Customer:")
+        self.customer_search = QLineEdit()
+        self.customer_search.setPlaceholderText("Type name or phone to search...")
+        self.customer_search.textChanged.connect(self.on_customer_search)
+        
+        search_customer_layout.addWidget(search_customer_label)
+        search_customer_layout.addWidget(self.customer_search)
+        customer_layout.addLayout(search_customer_layout)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setStyleSheet("background-color: #ddd;")
+        customer_layout.addWidget(separator)
         
         customer_layout.addWidget(QLabel("Customer Name: *"))
         self.customer_name = QLineEdit()
@@ -193,6 +232,16 @@ class BillingPage(QWidget):
         self.customer_address.setPlaceholderText("Enter address")
         self.customer_address.setMaximumHeight(60)
         customer_layout.addWidget(self.customer_address)
+        
+        # GSTIN field (shown only for GST bills)
+        self.gstin_label = QLabel("GSTIN: *")
+        self.gstin_label.setVisible(False)
+        customer_layout.addWidget(self.gstin_label)
+        
+        self.customer_gstin = QLineEdit()
+        self.customer_gstin.setPlaceholderText("Enter GSTIN (required for GST bill)")
+        self.customer_gstin.setVisible(False)
+        customer_layout.addWidget(self.customer_gstin)
         
         customer_group.setLayout(customer_layout)
         layout.addWidget(customer_group)
@@ -213,6 +262,30 @@ class BillingPage(QWidget):
         self.discount_total_label.setFont(QFont("Arial", 11))
         self.discount_total_label.setStyleSheet("color: #f44336;")
         summary_layout.addWidget(self.discount_total_label)
+        
+        # GST details (hidden by default)
+        self.gst_frame = QFrame()
+        gst_details_layout = QVBoxLayout(self.gst_frame)
+        gst_details_layout.setContentsMargins(0, 0, 0, 0)
+        gst_details_layout.setSpacing(5)
+        
+        self.cgst_label = QLabel("CGST @ 2.5%: ₹0.00")
+        self.cgst_label.setFont(QFont("Arial", 11))
+        self.cgst_label.setStyleSheet("color: #2196F3;")
+        gst_details_layout.addWidget(self.cgst_label)
+        
+        self.sgst_label = QLabel("SGST @ 2.5%: ₹0.00")
+        self.sgst_label.setFont(QFont("Arial", 11))
+        self.sgst_label.setStyleSheet("color: #2196F3;")
+        gst_details_layout.addWidget(self.sgst_label)
+        
+        self.total_tax_label = QLabel("Total Tax: ₹0.00")
+        self.total_tax_label.setFont(QFont("Arial", 11, QFont.Bold))
+        self.total_tax_label.setStyleSheet("color: #2196F3;")
+        gst_details_layout.addWidget(self.total_tax_label)
+        
+        self.gst_frame.setVisible(False)
+        summary_layout.addWidget(self.gst_frame)
         
         self.roundoff_label = QLabel("Round Off: ₹0.00")
         self.roundoff_label.setFont(QFont("Arial", 11))
@@ -239,14 +312,6 @@ class BillingPage(QWidget):
         
         summary_group.setLayout(summary_layout)
         layout.addWidget(summary_group)
-        
-        # Payment mode
-        payment_layout = QHBoxLayout()
-        payment_layout.addWidget(QLabel("Payment Mode:"))
-        self.payment_mode = QComboBox()
-        self.payment_mode.addItems(PAYMENT_MODES)
-        payment_layout.addWidget(self.payment_mode)
-        layout.addLayout(payment_layout)
         
         # Generate bill button
         generate_btn = QPushButton("💰 Generate Bill")
@@ -282,6 +347,28 @@ class BillingPage(QWidget):
         
         self.current_product = None
     
+    def load_sales_persons(self):
+        """Load sales persons into dropdown"""
+        sales_persons = db.get_all_sales_persons(active_only=True)
+        
+        self.sales_person_combo.clear()
+        self.sales_persons_dict = {}
+        
+        for sp in sales_persons:
+            self.sales_person_combo.addItem(sp['name'], sp['id'])
+            self.sales_persons_dict[sp['id']] = sp
+    
+    def on_gst_toggle(self):
+        """Handle GST checkbox toggle"""
+        is_gst = self.gst_bill_checkbox.isChecked()
+        
+        # Show/hide GSTIN field
+        self.gstin_label.setVisible(is_gst)
+        self.customer_gstin.setVisible(is_gst)
+        
+        # Recalculate totals
+        self.refresh_cart()
+    
     def on_search_product(self):
         """Handle product search"""
         search_text = self.product_search.text().strip()
@@ -307,8 +394,6 @@ class BillingPage(QWidget):
             self.display_product_details()
         else:
             # Show selection dialog
-            from PyQt5.QtWidgets import QDialog, QListWidget, QDialogButtonBox
-            
             dialog = QDialog(self)
             dialog.setWindowTitle("Select Product")
             dialog.setMinimumWidth(400)
@@ -383,7 +468,7 @@ class BillingPage(QWidget):
             QMessageBox.warning(self, "Error", message)
     
     def refresh_cart(self):
-        """Refresh cart display"""
+        """Refresh cart display and totals"""
         items = billing_manager.get_cart_items()
         
         self.cart_table.setRowCount(len(items))
@@ -397,13 +482,25 @@ class BillingPage(QWidget):
             self.cart_table.setItem(row, 5, QTableWidgetItem(str(item['quantity'])))
             self.cart_table.setItem(row, 6, QTableWidgetItem(f"₹{item['amount']:.2f}"))
         
-        # Update summary
-        summary = billing_manager.get_cart_summary()
-        self.item_count_label.setText(f"Items: {summary['item_count']}")
-        self.subtotal_label.setText(f"Subtotal: ₹{summary['subtotal']:.2f}")
-        self.discount_total_label.setText(f"Total Discount: ₹{summary['total_discount']:.2f}")
-        self.roundoff_label.setText(f"Round Off: ₹{summary['round_off']:.2f}")
-        self.grand_total_label.setText(f"₹{summary['grand_total']:.2f}")
+        # Update totals
+        is_gst_bill = self.gst_bill_checkbox.isChecked()
+        totals = billing_manager.calculate_totals(is_gst_bill)
+        
+        self.item_count_label.setText(f"Items: {len(items)}")
+        self.subtotal_label.setText(f"Subtotal: ₹{totals['subtotal']:.2f}")
+        self.discount_total_label.setText(f"Total Discount: ₹{totals['discount_amount']:.2f}")
+        
+        # Show/hide GST details
+        if is_gst_bill:
+            self.gst_frame.setVisible(True)
+            self.cgst_label.setText(f"CGST @ 2.5%: ₹{totals['cgst_amount']:.2f}")
+            self.sgst_label.setText(f"SGST @ 2.5%: ₹{totals['sgst_amount']:.2f}")
+            self.total_tax_label.setText(f"Total Tax: ₹{totals['total_tax']:.2f}")
+        else:
+            self.gst_frame.setVisible(False)
+        
+        self.roundoff_label.setText(f"Round Off: ₹{totals['round_off']:.2f}")
+        self.grand_total_label.setText(f"₹{totals['grand_total']:.2f}")
     
     def remove_from_cart(self):
         """Remove selected item from cart"""
@@ -413,105 +510,186 @@ class BillingPage(QWidget):
             QMessageBox.warning(self, "No Selection", "Please select an item to remove")
             return
         
-        success, message = billing_manager.remove_item_from_cart(current_row)
-        
-        if success:
-            self.refresh_cart()
+        billing_manager.remove_item_from_cart(current_row)
+        self.refresh_cart()
     
     def clear_cart(self):
-        """Clear all items from cart"""
+        """Clear entire cart"""
         if not billing_manager.get_cart_items():
             return
         
         reply = QMessageBox.question(
             self, "Clear Cart",
-            "Are you sure you want to clear the cart?",
+            "Are you sure you want to clear the entire cart?",
             QMessageBox.Yes | QMessageBox.No
         )
         
         if reply == QMessageBox.Yes:
             billing_manager.clear_cart()
             self.refresh_cart()
-            self.customer_name.clear()
-            self.customer_phone.clear()
-            self.customer_address.clear()
     
     def generate_bill(self):
         """Generate bill"""
+        # Validate cart
+        if not billing_manager.get_cart_items():
+            QMessageBox.warning(self, "Empty Cart", "Please add items to cart first")
+            return
+        
         # Validate customer name
         customer_name = self.customer_name.text().strip()
         if not customer_name:
-            QMessageBox.warning(self, "Required", "Customer name is required")
+            QMessageBox.warning(self, "Validation Error", "Customer name is required")
             self.customer_name.setFocus()
             return
         
-        # Check if cart has items
-        if not billing_manager.get_cart_items():
-            QMessageBox.warning(self, "Empty Cart", "Please add items to cart")
+        # Validate sales person
+        sales_person_id = self.sales_person_combo.currentData()
+        if not sales_person_id:
+            QMessageBox.warning(self, "Validation Error", "Please select a sales person")
             return
         
-        # Set customer info
+        # Validate GSTIN for GST bills
+        is_gst_bill = self.gst_bill_checkbox.isChecked()
+        customer_gstin = self.customer_gstin.text().strip()
+        
+        if is_gst_bill and not customer_gstin:
+            QMessageBox.warning(self, "Validation Error", "GSTIN is required for GST bills")
+            self.customer_gstin.setFocus()
+            return
+        
+        # Prepare customer data
         customer_data = {
-            'name': customer_name,
-            'phone': self.customer_phone.text().strip(),
-            'address': self.customer_address.toPlainText().strip()
+            'customer_name': customer_name,
+            'customer_phone': self.customer_phone.text().strip(),
+            'customer_address': self.customer_address.toPlainText().strip(),
+            'customer_city': '',
+            'customer_pin_code': '',
+            'customer_gstin': customer_gstin
         }
         
-        billing_manager.set_customer_info(customer_data)
-        
-        # Get payment mode
-        payment_mode = self.payment_mode.currentText()
-        
         # Create bill
-        user_id = auth_manager.get_current_user_id()
-        success, message, bill_id = billing_manager.create_bill(
-            payment_mode=payment_mode,
-            created_by=user_id
+        success, message, bill_data = billing_manager.create_bill(
+            customer_data, sales_person_id, is_gst_bill
         )
         
         if success:
-            QMessageBox.information(self, "Success", message)
+            # Generate PDF
+            from utils.pdf_generator import pdf_generator
+            pdf_success, pdf_path = pdf_generator.generate_invoice(bill_data)
             
-            # Ask if user wants to print
-            reply = QMessageBox.question(
-                self, "Print Bill",
-                "Bill created successfully!\n\nDo you want to generate PDF?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            
-            if reply == QMessageBox.Yes:
-                self.generate_pdf(bill_id)
-            
-            # Clear form
-            self.clear_cart()
+            if pdf_success:
+                # Show preview dialog
+                from ui.bill_preview_dialog import BillPreviewDialog
+                preview_dialog = BillPreviewDialog(bill_data, pdf_path, self)
+                preview_dialog.exec_()
+                
+                # ✅ REFRESH ENTIRE APP
+                self.refresh_entire_app()
+                
+                # Clear cart and form after closing preview
+                billing_manager.clear_cart()
+                self.refresh_cart()
+                self.clear_form()
+            else:
+                QMessageBox.warning(
+                    self, "PDF Error",
+                    f"Bill saved but PDF generation failed.\n\nInvoice No: {bill_data['invoice_number']}"
+                )
         else:
             QMessageBox.warning(self, "Error", message)
     
-    def generate_pdf(self, bill_id: int):
-        """Generate PDF invoice"""
-        try:
-            from utils.pdf_generator import PDFGenerator
-            
-            bill = db.get_bill_by_id(bill_id)
-            if not bill:
-                QMessageBox.warning(self, "Error", "Bill not found")
-                return
-            
-            pdf_gen = PDFGenerator()
-            success, pdf_path = pdf_gen.generate_invoice(bill)
-            
-            if success:
-                QMessageBox.information(
-                    self, "PDF Generated",
-                    f"Invoice PDF generated successfully!\n\n{pdf_path}"
-                )
-                
-                # Open PDF
-                import os
-                os.startfile(pdf_path)
-            else:
-                QMessageBox.warning(self, "Error", "Failed to generate PDF")
-                
-        except Exception as e:
-            logger.error(f"PDF generation error: {e}")
-            QMessageBox.warning(self, "Error", f"PDF generation error: {str(e)}")
+    def clear_form(self):
+        """Clear customer form"""
+        self.customer_name.clear()
+        self.customer_phone.clear()
+        self.customer_address.clear()
+        self.customer_gstin.clear()
+        self.customer_search.clear()
+        self.gst_bill_checkbox.setChecked(False)
+        self.customer_name.setFocus()
+    
+    def on_customer_search(self):
+        """Handle customer search with autocomplete"""
+        search_text = self.customer_search.text().strip()
+        
+        if len(search_text) < 2:
+            return
+        
+        # Search customers
+        customers = db.search_customers(search_text)
+        
+        if not customers:
+            return
+        
+        # If only one match and search text is exact phone, auto-fill
+        if len(customers) == 1 and customers[0].get('phone') == search_text:
+            self.fill_customer_data(customers[0])
+            return
+        
+        # Show dropdown for multiple matches
+        if len(customers) > 0:
+            self.show_customer_selection_dialog(customers)
+    
+    def show_customer_selection_dialog(self, customers: list):
+        """Show dialog to select from multiple customers"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Customer")
+        dialog.setMinimumWidth(450)
+        
+        layout = QVBoxLayout()
+        
+        info_label = QLabel(f"Found {len(customers)} customer(s). Select one:")
+        layout.addWidget(info_label)
+        
+        list_widget = QListWidget()
+        for customer in customers:
+            phone = customer.get('phone', 'No phone')
+            address = customer.get('address', 'No address')
+            item_text = f"{customer['name']} - {phone}\n   {address[:50]}..."
+            list_widget.addItem(item_text)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        
+        layout.addWidget(list_widget)
+        layout.addWidget(buttons)
+        
+        dialog.setLayout(layout)
+        
+        if dialog.exec_() == QDialog.Accepted and list_widget.currentRow() >= 0:
+            selected_customer = customers[list_widget.currentRow()]
+            self.fill_customer_data(selected_customer)
+    
+    def fill_customer_data(self, customer: dict):
+        """Fill customer form with data"""
+        self.customer_name.setText(customer['name'])
+        self.customer_phone.setText(customer.get('phone', ''))
+        self.customer_address.setPlainText(customer.get('address', ''))
+        self.customer_gstin.setText(customer.get('gstin', ''))
+        
+        # Show info message
+        QMessageBox.information(
+            self, "Customer Loaded",
+            f"Customer details loaded: {customer['name']}\n\nYou can edit the information if needed."
+        )
+        
+        # Clear search field
+        self.customer_search.clear()
+    
+    def refresh_entire_app(self):
+        """Refresh all components like app restart"""
+        # Reload products in billing (this will fetch fresh data from database)
+        self.load_products()
+    
+        # Reload sales persons
+        self.load_sales_persons()
+    
+        # Emit signal to refresh other pages
+        app_signals.inventory_updated.emit()
+    
+        logger.info("Application refreshed after bill generation")
+
+
+    # Clear search field
+        self.customer_search.clear()

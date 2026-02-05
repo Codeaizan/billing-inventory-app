@@ -1,8 +1,12 @@
 from typing import List, Optional, Tuple
+from datetime import datetime
 from database.db_manager import db
+from modules.auth import auth_manager
+from utils.signals import app_signals
 from utils.logger import logger
 from utils.validators import (validate_product_name, validate_price, 
                              validate_quantity, validate_discount)
+
 
 class InventoryManager:
     """Manages inventory operations"""
@@ -106,25 +110,67 @@ class InventoryManager:
         """Get product by ID"""
         return db.get_product_by_id(product_id)
     
-    def update_stock(self, product_id: int, quantity: int, 
-                    change_type: str = "ADJUSTMENT", 
-                    notes: Optional[str] = None) -> Tuple[bool, str]:
+    def update_stock(self, product_id: int, quantity: int, change_type: str, notes: str = "") -> Tuple[bool, str]:
         """
         Update product stock
-        change_type: PURCHASE, SALE, ADJUSTMENT, RETURN
+        change_type: 'ADD', 'REMOVE', 'ADJUST', 'PURCHASE', 'SALE', 'ADJUSTMENT'
         """
-        # Validate quantity
-        if quantity < 0:
-            return False, "Stock quantity cannot be negative"
-        
-        success = db.update_product_stock(
-            product_id, quantity, change_type, notes=notes
-        )
-        
-        if success:
+        try:
+            product = db.get_product_by_id(product_id)
+            if not product:
+                return False, "Product not found"
+            
+            old_quantity = product['current_stock']
+            
+            # Handle different change types
+            if change_type in ['ADD', 'PURCHASE']:
+                new_quantity = old_quantity + quantity
+                actual_change_type = 'PURCHASE'
+            elif change_type in ['REMOVE', 'SALE']:
+                if quantity > old_quantity:
+                    return False, "Insufficient stock"
+                new_quantity = old_quantity - quantity
+                actual_change_type = 'SALE'
+            elif change_type in ['ADJUST', 'ADJUSTMENT']:
+                new_quantity = quantity
+                actual_change_type = 'ADJUSTMENT'
+            else:
+                return False, f"Invalid change type: {change_type}"
+            
+            # Update stock
+            with db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE products SET current_stock = ?, updated_at = ? WHERE id = ?",
+                    (new_quantity, datetime.now(), product_id)
+                )
+                
+                # Record in stock history
+                conn.execute("""
+                    INSERT INTO stock_history 
+                    (product_id, change_type, quantity_before, quantity_after, 
+                     quantity_changed, notes, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    product_id,
+                    actual_change_type,
+                    old_quantity,
+                    new_quantity,
+                    new_quantity - old_quantity,
+                    notes,
+                    auth_manager.get_current_user_id()
+                ))
+                
+                conn.commit()
+            
+            logger.info(f"Stock updated for product {product_id}: {old_quantity} -> {new_quantity}")
+             # Emit signal
+            app_signals.inventory_updated.emit()
             return True, "Stock updated successfully"
-        else:
-            return False, "Failed to update stock"
+            
+        except Exception as e:
+            logger.error(f"Error updating stock: {e}")
+            return False, str(e)
+
     
     def add_stock(self, product_id: int, quantity: int, 
                  notes: Optional[str] = None) -> Tuple[bool, str]:
@@ -173,6 +219,7 @@ class InventoryManager:
     def get_expiring_batches(self, days: int = 90) -> List[dict]:
         """Get batches expiring within specified days"""
         return db.get_expiring_batches(days)
+
 
 # Create global instance
 inventory_manager = InventoryManager()

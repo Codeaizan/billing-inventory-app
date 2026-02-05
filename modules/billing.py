@@ -1,234 +1,253 @@
-from typing import List, Optional, Tuple
+from typing import List, Tuple, Optional, Dict
 from datetime import datetime
 from database.db_manager import db
 from modules.gst_calculator import gst_calculator
+from modules.auth import auth_manager
 from utils.logger import logger
-from utils.validators import validate_customer_name, validate_quantity
 
 class BillingManager:
     """Manages billing operations"""
     
     def __init__(self):
-        self.current_bill_items = []
-        self.customer_info = {}
+        self.cart_items = []
+        self.current_invoice_number = None
     
-    def add_item_to_cart(self, product: dict, quantity: int, 
-                         batch_number: Optional[str] = None,
-                         expiry_date: Optional[str] = None) -> Tuple[bool, str]:
-        """Add item to current bill"""
+    def add_item_to_cart(self, product: dict, quantity: int, batch_number: str = "", expiry_date: str = "") -> Tuple[bool, str]:
+        """Add item to cart"""
+        if quantity <= 0:
+            return False, "Quantity must be greater than 0"
         
-        # Validate quantity
-        valid, msg, qty = validate_quantity(str(quantity))
-        if not valid:
-            return False, msg
-        
-        # Check stock availability
-        if product['current_stock'] < qty:
+        if quantity > product['current_stock']:
             return False, f"Insufficient stock. Available: {product['current_stock']}"
-        
-        # Calculate item totals
-        rate, amount = gst_calculator.calculate_item_total(
-            product['mrp'], 
-            product['discount_percent'], 
-            qty
-        )
-        
-        # Create bill item
-        bill_item = {
-            'product_id': product['id'],
-            'product_name': product['name'],
-            'hsn_code': product['hsn_code'],
-            'batch_number': batch_number,
-            'expiry_date': expiry_date,
-            'quantity': qty,
-            'mrp': product['mrp'],
-            'discount_percent': product['discount_percent'],
-            'rate': rate,
-            'amount': amount
-        }
         
         # Check if product already in cart
-        existing_index = None
-        for i, item in enumerate(self.current_bill_items):
-            if item['product_id'] == product['id'] and item.get('batch_number') == batch_number:
-                existing_index = i
-                break
+        for item in self.cart_items:
+            if item['product_id'] == product['id']:
+                # Update quantity
+                new_quantity = item['quantity'] + quantity
+                if new_quantity > product['current_stock']:
+                    return False, f"Total quantity exceeds stock. Available: {product['current_stock']}"
+                
+                item['quantity'] = new_quantity
+                item['amount'] = item['rate'] * new_quantity
+                return True, "Quantity updated in cart"
         
-        if existing_index is not None:
-            # Update quantity
-            old_qty = self.current_bill_items[existing_index]['quantity']
-            new_qty = old_qty + qty
-            
-            # Check stock for new quantity
-            if product['current_stock'] < new_qty:
-                return False, f"Insufficient stock. Available: {product['current_stock']}"
-            
-            self.current_bill_items[existing_index]['quantity'] = new_qty
-            rate, amount = gst_calculator.calculate_item_total(
-                product['mrp'], 
-                product['discount_percent'], 
-                new_qty
-            )
-            self.current_bill_items[existing_index]['rate'] = rate
-            self.current_bill_items[existing_index]['amount'] = amount
-        else:
-            # Add new item
-            self.current_bill_items.append(bill_item)
+        # Add new item
+        item = {
+            'product_id': product['id'],
+            'product_name': product['name'],
+            'hsn_code': product.get('hsn_code', '30049012'),
+            'batch_number': batch_number,
+            'expiry_date': expiry_date,
+            'quantity': quantity,
+            'unit': product.get('unit', 'Nos'),
+            'mrp': product['mrp'],
+            'discount_percent': product['discount_percent'],
+            'rate': product['selling_price'],
+            'amount': product['selling_price'] * quantity
+        }
         
-        logger.info(f"Item added to cart: {product['name']} x {qty}")
+        self.cart_items.append(item)
         return True, "Item added to cart"
     
-    def remove_item_from_cart(self, index: int) -> Tuple[bool, str]:
+    def remove_item_from_cart(self, index: int) -> bool:
         """Remove item from cart by index"""
-        if 0 <= index < len(self.current_bill_items):
-            removed_item = self.current_bill_items.pop(index)
-            logger.info(f"Item removed from cart: {removed_item['product_name']}")
-            return True, "Item removed from cart"
-        return False, "Invalid item index"
-    
-    def update_item_quantity(self, index: int, new_quantity: int) -> Tuple[bool, str]:
-        """Update quantity of item in cart"""
-        if not (0 <= index < len(self.current_bill_items)):
-            return False, "Invalid item index"
-        
-        # Validate quantity
-        valid, msg, qty = validate_quantity(str(new_quantity))
-        if not valid:
-            return False, msg
-        
-        item = self.current_bill_items[index]
-        
-        # Get product to check stock
-        product = db.get_product_by_id(item['product_id'])
-        if not product:
-            return False, "Product not found"
-        
-        if product['current_stock'] < qty:
-            return False, f"Insufficient stock. Available: {product['current_stock']}"
-        
-        # Update quantity and recalculate
-        item['quantity'] = qty
-        rate, amount = gst_calculator.calculate_item_total(
-            item['mrp'], 
-            item['discount_percent'], 
-            qty
-        )
-        item['rate'] = rate
-        item['amount'] = amount
-        
-        return True, "Quantity updated"
+        if 0 <= index < len(self.cart_items):
+            self.cart_items.pop(index)
+            return True
+        return False
     
     def clear_cart(self):
         """Clear all items from cart"""
-        self.current_bill_items = []
-        self.customer_info = {}
-        logger.info("Cart cleared")
+        self.cart_items = []
     
     def get_cart_items(self) -> List[dict]:
         """Get all items in cart"""
-        return self.current_bill_items
+        return self.cart_items
     
-    def get_cart_summary(self) -> dict:
-        """Get cart summary with totals"""
-        if not self.current_bill_items:
+    def calculate_totals(self, is_gst_bill: bool = False) -> dict:
+        """
+        Calculate bill totals with or without GST
+        
+        For Non-GST Bill:
+            Subtotal = Sum of all item amounts
+            Grand Total = Subtotal + Round Off
+        
+        For GST Bill:
+            Subtotal (Taxable Amount) = Sum of all item amounts
+            CGST = 2.5% of Subtotal
+            SGST = 2.5% of Subtotal
+            Total Tax = CGST + SGST (5%)
+            Grand Total = Subtotal + Total Tax + Round Off
+        """
+        if not self.cart_items:
             return {
-                'item_count': 0,
                 'subtotal': 0.0,
-                'total_discount': 0.0,
-                'grand_total': 0.0,
-                'round_off': 0.0
+                'discount_amount': 0.0,
+                'taxable_amount': 0.0,
+                'cgst_amount': 0.0,
+                'sgst_amount': 0.0,
+                'total_tax': 0.0,
+                'round_off': 0.0,
+                'grand_total': 0.0
             }
         
-        totals = gst_calculator.calculate_bill_totals(self.current_bill_items)
-        totals['item_count'] = len(self.current_bill_items)
+        # Calculate subtotal and discount
+        subtotal = sum(item['amount'] for item in self.cart_items)
         
-        return totals
+        # Calculate total discount given
+        total_mrp = sum(item['mrp'] * item['quantity'] for item in self.cart_items)
+        discount_amount = total_mrp - subtotal
+        
+        # Taxable amount is the subtotal (after discount)
+        taxable_amount = subtotal
+        
+        # Calculate GST if applicable
+        if is_gst_bill:
+            cgst_amount = taxable_amount * 0.025  # 2.5%
+            sgst_amount = taxable_amount * 0.025  # 2.5%
+            total_tax = cgst_amount + sgst_amount  # 5%
+        else:
+            cgst_amount = 0.0
+            sgst_amount = 0.0
+            total_tax = 0.0
+        
+        # Calculate grand total
+        grand_total_before_round = subtotal + total_tax
+        
+        # Round off
+        grand_total = round(grand_total_before_round)
+        round_off = grand_total - grand_total_before_round
+        
+        return {
+            'subtotal': subtotal,
+            'discount_amount': discount_amount,
+            'taxable_amount': taxable_amount,
+            'cgst_amount': cgst_amount,
+            'sgst_amount': sgst_amount,
+            'total_tax': total_tax,
+            'round_off': round_off,
+            'grand_total': grand_total
+        }
     
-    def set_customer_info(self, customer_data: dict) -> Tuple[bool, str]:
-        """Set customer information for current bill"""
+    def generate_invoice_number(self) -> str:
+        """Generate next invoice number"""
+        from utils.company_settings import company_settings
         
-        # Validate customer name
-        valid, msg = validate_customer_name(customer_data.get('name', ''))
-        if not valid:
-            return False, msg
+        # Get invoice prefix
+        prefix = company_settings.get('invoice_prefix', 'NH')
         
-        self.customer_info = customer_data
-        return True, "Customer information saved"
+        # Get financial year (Apr-Mar)
+        now = datetime.now()
+        if now.month >= 4:
+            fy_start = now.year
+            fy_end = now.year + 1
+        else:
+            fy_start = now.year - 1
+            fy_end = now.year
+        
+        fy_str = f"{fy_start % 100}-{fy_end % 100}"
+        
+        # Get last invoice number for this financial year
+        last_invoice = db.get_last_invoice_number(f"{prefix}/%/{fy_str}")
+        
+        if last_invoice:
+            # Extract number from invoice like "NH/123/25-26"
+            parts = last_invoice.split('/')
+            if len(parts) >= 2:
+                try:
+                    last_num = int(parts[1])
+                    next_num = last_num + 1
+                except:
+                    next_num = 1
+            else:
+                next_num = 1
+        else:
+            next_num = 1
+        
+        return f"{prefix}/{next_num}/{fy_str}"
     
-    def create_bill(self, payment_mode: str = "Cash", 
-                   notes: Optional[str] = None,
-                   created_by: Optional[int] = None) -> Tuple[bool, str, Optional[int]]:
+    def create_bill(self, customer_data: dict, sales_person_id: int, is_gst_bill: bool = False) -> Tuple[bool, str, Optional[dict]]:
         """
-        Create bill from current cart
-        Returns: (success, message, bill_id)
+        Create a bill
+        Returns: (success, message, bill_data)
         """
-        
-        # Check if cart has items
-        if not self.current_bill_items:
+        if not self.cart_items:
             return False, "Cart is empty", None
         
-        # Check if customer info is set
-        if not self.customer_info.get('name'):
-            return False, "Customer information is required", None
+        if not customer_data.get('customer_name'):
+            return False, "Customer name is required", None
         
-        # Calculate totals
-        totals = self.get_cart_summary()
+        if not sales_person_id:
+            return False, "Sales person is required", None
         
-        # Generate invoice number
-        invoice_number = db.generate_invoice_number()
+        # Validate GSTIN for GST bills
+        if is_gst_bill and not customer_data.get('customer_gstin'):
+            return False, "Customer GSTIN is required for GST bills", None
         
-        # Prepare bill data
-        bill_data = {
-            'invoice_number': invoice_number,
-            'customer_id': self.customer_info.get('id'),
-            'customer_name': self.customer_info['name'],
-            'customer_phone': self.customer_info.get('phone'),
-            'customer_address': self.customer_info.get('address'),
-            'customer_city': self.customer_info.get('city'),
-            'customer_state': self.customer_info.get('state'),
-            'customer_pin_code': self.customer_info.get('pin_code'),
-            'customer_gstin': self.customer_info.get('gstin'),
-            'subtotal': totals['subtotal'],
-            'total_discount': totals['total_discount'],
-            'round_off': totals['round_off'],
-            'grand_total': totals['grand_total'],
-            'payment_mode': payment_mode,
-            'notes': notes,
-            'created_by': created_by
-        }
-        
-        # Create bill in database
-        bill_id = db.create_bill(bill_data, self.current_bill_items)
-        
-        if bill_id:
-            logger.info(f"Bill created: {invoice_number}")
-            # Clear cart after successful bill creation
-            self.clear_cart()
-            return True, f"Bill created successfully: {invoice_number}", bill_id
-        else:
-            return False, "Failed to create bill", None
-    
-    def get_bill_by_id(self, bill_id: int) -> Optional[dict]:
-        """Get bill details by ID"""
-        return db.get_bill_by_id(bill_id)
-    
-    def get_bill_by_invoice_number(self, invoice_number: str) -> Optional[dict]:
-        """Get bill details by invoice number"""
-        return db.get_bill_by_invoice_number(invoice_number)
-    
-    def search_bills(self, search_term: str = "", 
-                    start_date: Optional[str] = None,
-                    end_date: Optional[str] = None) -> List[dict]:
-        """Search bills"""
-        return db.search_bills(search_term, start_date, end_date)
-    
-    def get_recent_bills(self, limit: int = 50) -> List[dict]:
-        """Get recent bills"""
-        return db.get_recent_bills(limit)
-    
-    def get_cart_total_items(self) -> int:
-        """Get total number of items in cart"""
-        return sum(item['quantity'] for item in self.current_bill_items)
+        try:
+            # Save or update customer in database
+            customer_save_data = {
+                'name': customer_data['customer_name'],
+                'phone': customer_data.get('customer_phone', ''),
+                'address': customer_data.get('customer_address', ''),
+                'city': customer_data.get('customer_city', ''),
+                'gstin': customer_data.get('customer_gstin', '')
+            }
+            
+            success_cust, msg_cust, customer_id = db.add_or_update_customer(customer_save_data)
+            
+            if not success_cust:
+                logger.warning(f"Failed to save customer: {msg_cust}")
+                customer_id = None
+            
+            # Generate invoice number
+            invoice_number = self.generate_invoice_number()
+            
+            # Calculate totals
+            totals = self.calculate_totals(is_gst_bill)
+            
+            # Prepare bill data
+            bill_data = {
+                'invoice_number': invoice_number,
+                'customer_id': customer_id,
+                'customer_name': customer_data['customer_name'],
+                'customer_phone': customer_data.get('customer_phone', ''),
+                'customer_address': customer_data.get('customer_address', ''),
+                'customer_city': customer_data.get('customer_city', ''),
+                'customer_pin_code': customer_data.get('customer_pin_code', ''),
+                'customer_gstin': customer_data.get('customer_gstin', ''),
+                'sales_person_id': sales_person_id,
+                'is_gst_bill': 1 if is_gst_bill else 0,
+                'subtotal': totals['subtotal'],
+                'discount_amount': totals['discount_amount'],
+                'taxable_amount': totals['taxable_amount'],
+                'cgst_amount': totals['cgst_amount'],
+                'sgst_amount': totals['sgst_amount'],
+                'total_tax': totals['total_tax'],
+                'round_off': totals['round_off'],
+                'grand_total': totals['grand_total'],
+                'created_by': auth_manager.get_current_user_id()
+            }
+            
+            # Create bill in database
+            success, message, bill_id = db.create_bill(bill_data, self.cart_items)
+            
+            if success:
+                # Get complete bill data for PDF generation
+                bill_data['id'] = bill_id
+                bill_data['items'] = self.cart_items.copy()
+                bill_data['created_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                logger.info(f"Bill created: {invoice_number}")
+                return True, "Bill created successfully", bill_data
+            else:
+                return False, message, None
+                
+        except Exception as e:
+            logger.error(f"Error creating bill: {e}")
+            return False, str(e), None
+
 
 # Create global instance
 billing_manager = BillingManager()
