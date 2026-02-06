@@ -21,12 +21,13 @@ class LoginWindow(QWidget):
         self.setWindowTitle(f"{APP_NAME} - Login")
         self.setFixedSize(800, 800)
         
-        # Set gradient background
+        # Set gradient background using color palette
         self.setAutoFillBackground(True)
         palette = self.palette()
         gradient = QLinearGradient(0, 0, 0, 600)
-        gradient.setColorAt(0, QColor(76, 175, 80))  # Green
-        gradient.setColorAt(1, QColor(56, 142, 60))  # Dark Green
+        gradient.setColorAt(0, QColor("#90AB8B"))  # Muted sage green
+        gradient.setColorAt(0.5, QColor("#5A7863"))  # Medium dark green
+        gradient.setColorAt(1, QColor("#3B4953"))  # Dark blue-grey
         palette.setBrush(QPalette.Window, QBrush(gradient))
         self.setPalette(palette)
         
@@ -48,7 +49,7 @@ class LoginWindow(QWidget):
         # Footer
         footer = QLabel("© 2026 Natural Health World")
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("color: white; font-size: 10pt; opacity: 0.8;")
+        footer.setStyleSheet("color: #EBF4DD; font-size: 10pt; opacity: 0.9;")
         main_layout.addWidget(footer)
         
         self.setLayout(main_layout)
@@ -61,7 +62,7 @@ class LoginWindow(QWidget):
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
-                background-color: white;
+                background-color: #EBF4DD;
                 border-radius: 15px;
             }
         """)
@@ -71,7 +72,7 @@ class LoginWindow(QWidget):
         shadow.setBlurRadius(30)
         shadow.setXOffset(0)
         shadow.setYOffset(10)
-        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setColor(QColor(59, 73, 83, 100))  # #3B4953 with transparency
         card.setGraphicsEffect(shadow)
         
         layout = QVBoxLayout(card)
@@ -91,7 +92,7 @@ class LoginWindow(QWidget):
         company_label = QLabel("Natural Health World")
         company_label.setAlignment(Qt.AlignCenter)
         company_label.setStyleSheet("""
-            color: #4CAF50;
+            color: #5A7863;
             font-size: 20pt;
             font-weight: bold;
             font-family: 'Segoe UI', 'Arial', sans-serif;
@@ -101,7 +102,7 @@ class LoginWindow(QWidget):
         tagline_label = QLabel("The Herbal Healing")
         tagline_label.setAlignment(Qt.AlignCenter)
         tagline_label.setStyleSheet("""
-            color: #888;
+            color: #90AB8B;
             font-size: 11pt;
             font-style: italic;
             margin-bottom: 10px;
@@ -118,7 +119,7 @@ class LoginWindow(QWidget):
         login_title = QLabel("Sign In")
         login_title.setAlignment(Qt.AlignCenter)
         login_title.setStyleSheet("""
-            color: #333;
+            color: #3B4953;
             font-size: 16pt;
             font-weight: bold;
             margin-bottom: 10px;
@@ -146,8 +147,8 @@ class LoginWindow(QWidget):
         self.login_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4CAF50, stop:1 #45a049);
-                color: white;
+                    stop:0 #5A7863, stop:1 #3B4953);
+                color: #EBF4DD;
                 font-size: 14pt;
                 font-weight: bold;
                 padding: 15px;
@@ -156,13 +157,14 @@ class LoginWindow(QWidget):
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #45a049, stop:1 #3d8b40);
+                    stop:0 #90AB8B, stop:1 #5A7863);
             }
             QPushButton:pressed {
-                background: #3d8b40;
+                background: #3B4953;
             }
             QPushButton:disabled {
-                background: #cccccc;
+                background: #90AB8B;
+                opacity: 0.6;
             }
         """)
         self.login_btn.setCursor(Qt.PointingHandCursor)
@@ -173,7 +175,7 @@ class LoginWindow(QWidget):
         hint_label = QLabel("Default: admin / admin123")
         hint_label.setAlignment(Qt.AlignCenter)
         hint_label.setStyleSheet("""
-            color: #999;
+            color: #90AB8B;
             font-size: 9pt;
             margin-top: 10px;
         """)
@@ -190,12 +192,12 @@ class LoginWindow(QWidget):
         container = QFrame()
         container.setStyleSheet("""
             QFrame {
-                background-color: #f5f5f5;
+                background-color: white;
                 border-radius: 8px;
-                border: 2px solid #e0e0e0;
+                border: 2px solid #90AB8B;
             }
             QFrame:focus-within {
-                border: 2px solid #4CAF50;
+                border: 2px solid #5A7863;
             }
         """)
         
@@ -205,7 +207,7 @@ class LoginWindow(QWidget):
         
         # Icon
         icon_label = QLabel(icon)
-        icon_label.setStyleSheet("font-size: 18pt; color: #888;")
+        icon_label.setStyleSheet("font-size: 18pt; color: #90AB8B;")
         layout.addWidget(icon_label)
         
         # Input field
@@ -216,7 +218,7 @@ class LoginWindow(QWidget):
                 background: transparent;
                 border: none;
                 font-size: 12pt;
-                color: #333;
+                color: #3B4953;
             }
             QLineEdit:focus {
                 outline: none;
@@ -267,22 +269,22 @@ class LoginWindow(QWidget):
         msg_box.setText(message)
         msg_box.setStyleSheet("""
             QMessageBox {
-                background-color: white;
+                background-color: #EBF4DD;
             }
             QLabel {
-                color: #333;
+                color: #3B4953;
                 font-size: 11pt;
             }
             QPushButton {
-                background-color: #4CAF50;
-                color: white;
+                background-color: #5A7863;
+                color: #EBF4DD;
                 padding: 8px 20px;
                 border-radius: 5px;
                 font-weight: bold;
                 min-width: 80px;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #90AB8B;
             }
         """)
         msg_box.exec_()

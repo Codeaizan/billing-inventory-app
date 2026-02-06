@@ -36,71 +36,114 @@ class MainWindow(QMainWindow):
         y = int((screen.height() - height) / 2)
         self.setGeometry(x, y, width, height)
         
-        # Set global stylesheet
+        # Set global stylesheet with color palette
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #f0f0f0;
+                background-color: #EBF4DD;
             }
             QTabWidget::pane {
-                border: 1px solid #ddd;
-                background-color: white;
-                border-radius: 5px;
+                border: 2px solid #90AB8B;
+                background-color: #EBF4DD;
+                border-radius: 8px;
+                padding: 5px;
             }
             QTabBar::tab {
-                background-color: #e0e0e0;
-                color: #333;
+                background-color: #90AB8B;
+                color: #EBF4DD;
                 padding: 12px 25px;
                 margin-right: 2px;
-                border-top-left-radius: 5px;
-                border-top-right-radius: 5px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
                 font-size: 13px;
                 font-weight: bold;
             }
             QTabBar::tab:selected {
-                background-color: white;
-                color: #4CAF50;
+                background-color: #5A7863;
+                color: #EBF4DD;
             }
             QTabBar::tab:hover {
-                background-color: #d5d5d5;
+                background-color: #5A7863;
             }
             QPushButton {
                 padding: 8px 15px;
-                border-radius: 4px;
+                border-radius: 5px;
                 font-size: 12px;
                 font-weight: bold;
                 border: none;
+                background-color: #5A7863;
+                color: #EBF4DD;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+            QPushButton:pressed {
+                background-color: #3B4953;
             }
             QLabel {
                 font-size: 12px;
+                color: #3B4953;
+            }
+            QMenuBar {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 5px;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                color: #EBF4DD;
+                padding: 5px 10px;
+            }
+            QMenuBar::item:selected {
+                background-color: #90AB8B;
+            }
+            QMenu {
+                background-color: #EBF4DD;
+                color: #3B4953;
+                border: 2px solid #90AB8B;
+            }
+            QMenu::item:selected {
+                background-color: #90AB8B;
+                color: #EBF4DD;
+            }
+            QStatusBar {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                font-weight: bold;
             }
             /* ✅ SCROLLBAR STYLING */
             QScrollBar:vertical {
                 border: none;
-                background: #f0f0f0;
-                width: 10px;
+                background: #EBF4DD;
+                width: 12px;
                 margin: 0px;
             }
             QScrollBar::handle:vertical {
-                background: #888;
+                background: #90AB8B;
                 min-height: 20px;
-                border-radius: 5px;
+                border-radius: 6px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #555;
+                background: #5A7863;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
             QScrollBar:horizontal {
                 border: none;
-                background: #f0f0f0;
-                height: 10px;
+                background: #EBF4DD;
+                height: 12px;
                 margin: 0px;
             }
             QScrollBar::handle:horizontal {
-                background: #888;
+                background: #90AB8B;
                 min-width: 20px;
-                border-radius: 5px;
+                border-radius: 6px;
             }
             QScrollBar::handle:horizontal:hover {
-                background: #555;
+                background: #5A7863;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
             }
         """)
         
@@ -168,7 +211,7 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
-        # View menu (NEW)
+        # View menu
         view_menu = menubar.addMenu("&View")
         
         maximize_action = QAction("Maximize", self)
@@ -190,14 +233,28 @@ class MainWindow(QMainWindow):
         """Create header section"""
         header_layout = QHBoxLayout()
         
+        # Create header container with styled background
+        header_container = QWidget()
+        header_container.setStyleSheet("""
+            QWidget {
+                background-color: #EBF4DD;
+                border-radius: 8px;
+                padding: 10px;
+                border: 2px solid #90AB8B;
+            }
+        """)
+        
+        container_layout = QHBoxLayout(header_container)
+        container_layout.setContentsMargins(15, 10, 15, 10)
+        
         # Left side - Company info
         left_layout = QVBoxLayout()
         company_label = QLabel(COMPANY_NAME)
         company_label.setFont(QFont("Arial", 16, QFont.Bold))
-        company_label.setStyleSheet("color: #4CAF50;")
+        company_label.setStyleSheet("color: #5A7863; border: none;")
         
         date_time_label = QLabel()
-        date_time_label.setStyleSheet("color: #666;")
+        date_time_label.setStyleSheet("color: #90AB8B; font-weight: bold; border: none;")
         self.date_time_label = date_time_label
         self.update_datetime()
         
@@ -210,16 +267,24 @@ class MainWindow(QMainWindow):
         
         user_label = QLabel(f"👤 {self.current_user['full_name']}")
         user_label.setFont(QFont("Arial", 12, QFont.Bold))
-        user_label.setStyleSheet("color: #333;")
+        user_label.setStyleSheet("color: #3B4953; border: none;")
         
         logout_btn = QPushButton("Logout")
         logout_btn.setStyleSheet("""
             QPushButton {
-                background-color: #f44336;
-                color: white;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5A7863, stop:1 #3B4953);
+                color: #EBF4DD;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #da190b;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #90AB8B, stop:1 #5A7863);
+            }
+            QPushButton:pressed {
+                background: #3B4953;
             }
         """)
         logout_btn.clicked.connect(self.logout)
@@ -228,9 +293,11 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(user_label, alignment=Qt.AlignRight)
         right_layout.addWidget(logout_btn, alignment=Qt.AlignRight)
         
-        header_layout.addLayout(left_layout)
-        header_layout.addStretch()
-        header_layout.addLayout(right_layout)
+        container_layout.addLayout(left_layout)
+        container_layout.addStretch()
+        container_layout.addLayout(right_layout)
+        
+        header_layout.addWidget(header_container)
         
         return header_layout
     
@@ -250,26 +317,79 @@ class MainWindow(QMainWindow):
         """Create database backup"""
         from modules.backup import backup_manager
         
-        reply = QMessageBox.question(
-            self, "Create Backup",
-            "Do you want to create a backup of the database?",
-            QMessageBox.Yes | QMessageBox.No
-        )
+        # Custom styled message box
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Create Backup")
+        msg_box.setText("Do you want to create a backup of the database?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+                font-size: 11pt;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
+        
+        reply = msg_box.exec_()
         
         if reply == QMessageBox.Yes:
             success, message, backup_path = backup_manager.create_backup()
+            
+            result_box = QMessageBox(self)
+            result_box.setStyleSheet(msg_box.styleSheet())
+            
             if success:
-                QMessageBox.information(self, "Backup Created", f"Backup created successfully!\n\n{backup_path}")
+                result_box.setIcon(QMessageBox.Information)
+                result_box.setWindowTitle("Backup Created")
+                result_box.setText(f"Backup created successfully!\n\n{backup_path}")
             else:
-                QMessageBox.warning(self, "Backup Failed", message)
+                result_box.setIcon(QMessageBox.Warning)
+                result_box.setWindowTitle("Backup Failed")
+                result_box.setText(message)
+            
+            result_box.exec_()
     
     def logout(self):
         """Logout current user"""
-        reply = QMessageBox.question(
-            self, "Logout",
-            "Are you sure you want to logout?",
-            QMessageBox.Yes | QMessageBox.No
-        )
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Logout")
+        msg_box.setText("Are you sure you want to logout?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+                font-size: 11pt;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
+        
+        reply = msg_box.exec_()
         
         if reply == QMessageBox.Yes:
             auth_manager.logout()
@@ -290,14 +410,14 @@ class MainWindow(QMainWindow):
     def show_about(self):
         """Show about dialog"""
         about_text = f"""
-        <h2>{APP_NAME}</h2>
-        <p><b>Version:</b> {APP_VERSION}</p>
-        <p><b>Company:</b> {COMPANY_NAME}</p>
+        <h2 style="color: #5A7863;">{APP_NAME}</h2>
+        <p style="color: #3B4953;"><b>Version:</b> {APP_VERSION}</p>
+        <p style="color: #3B4953;"><b>Company:</b> {COMPANY_NAME}</p>
         <br>
-        <p>A complete billing and inventory management system for Ayurvedic medicine business.</p>
+        <p style="color: #3B4953;">A complete billing and inventory management system for Ayurvedic medicine business.</p>
         <br>
-        <p><b>Features:</b></p>
-        <ul>
+        <p style="color: #3B4953;"><b>Features:</b></p>
+        <ul style="color: #3B4953;">
             <li>GST & Non-GST Bill Generation</li>
             <li>Sales Person Management</li>
             <li>Inventory Management with Batch Tracking</li>
@@ -308,18 +428,62 @@ class MainWindow(QMainWindow):
             <li>Database Backup and Restore</li>
         </ul>
         <br>
-        <p>© 2026 {COMPANY_NAME}. All rights reserved.</p>
+        <p style="color: #90AB8B;">© 2026 {COMPANY_NAME}. All rights reserved.</p>
         """
         
-        QMessageBox.about(self, "About", about_text)
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("About")
+        msg_box.setTextFormat(Qt.RichText)
+        msg_box.setText(about_text)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
+        msg_box.exec_()
     
     def closeEvent(self, event):
         """Handle window close event"""
-        reply = QMessageBox.question(
-            self, "Exit Application",
-            "Are you sure you want to exit?",
-            QMessageBox.Yes | QMessageBox.No
-        )
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Exit Application")
+        msg_box.setText("Are you sure you want to exit?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+                font-size: 11pt;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
+        
+        reply = msg_box.exec_()
         
         if reply == QMessageBox.Yes:
             event.accept()

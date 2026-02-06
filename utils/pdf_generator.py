@@ -10,6 +10,7 @@ from modules.gst_calculator import gst_calculator
 from config import PDF_OUTPUT_DIR
 from utils.logger import logger
 
+
 class PDFGenerator:
     """Generate PDF invoices"""
     
@@ -202,43 +203,59 @@ class PDFGenerator:
             elements.append(items_table)
             elements.append(Spacer(1, 0.2*inch))
             
-            # Totals section
+            # ✅ FIXED: Totals section - separate amount in words from grand total
             if is_gst_bill:
                 # GST Bill - Show tax breakdown
                 totals_data = [
-                    ['', '', 'SUBTOTAL (Taxable Amount)', f"{bill['subtotal']:.2f}"],
-                    ['', '', f"CGST @ 2.5%", f"{bill['cgst_amount']:.2f}"],
-                    ['', '', f"SGST @ 2.5%", f"{bill['sgst_amount']:.2f}"],
-                    ['', '', 'TOTAL TAX', f"{bill['total_tax']:.2f}"],
-                    ['', '', 'ROUND OFF', f"{bill['round_off']:.2f}"],
+                    ['', 'SUBTOTAL (Taxable Amount)', f"{bill['subtotal']:.2f}"],
+                    ['', f"CGST @ 2.5%", f"{bill['cgst_amount']:.2f}"],
+                    ['', f"SGST @ 2.5%", f"{bill['sgst_amount']:.2f}"],
+                    ['', 'TOTAL TAX', f"{bill['total_tax']:.2f}"],
+                    ['', 'ROUND OFF', f"{bill['round_off']:.2f}"],
                 ]
             else:
                 # Non-GST Bill - Simple totals
                 totals_data = [
-                    ['', '', 'SUBTOTAL', f"{bill['subtotal']:.2f}"],
-                    ['', '', 'ROUND OFF', f"{bill['round_off']:.2f}"],
+                    ['', 'SUBTOTAL', f"{bill['subtotal']:.2f}"],
+                    ['', 'ROUND OFF', f"{bill['round_off']:.2f}"],
                 ]
             
-            # Convert grand total to words
-            grand_total_int = int(bill['grand_total'])
-            amount_in_words = gst_calculator.number_to_words(grand_total_int)
+            # Grand Total row
+            totals_data.append(['', 'GRAND TOTAL', f"{bill['grand_total']:.2f}"])
             
-            totals_data.append(['RUPEES:', amount_in_words.upper(), 'GRAND TOTAL', f"{bill['grand_total']:.2f}"])
-            
-            totals_table = Table(totals_data, colWidths=[1*inch, 3.5*inch, 1.5*inch, 1*inch])
+            totals_table = Table(totals_data, colWidths=[3.5*inch, 1.5*inch, 1.5*inch])
             totals_table.setStyle(TableStyle([
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
                 ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
-                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (3, -1), (3, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (2, -1), (2, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('FONTSIZE', (3, -1), (3, -1), 12),
-                ('TEXTCOLOR', (3, -1), (3, -1), colors.HexColor('#4CAF50')),
-                ('LINEABOVE', (2, -1), (3, -1), 2, colors.HexColor('#4CAF50')),
+                ('FONTSIZE', (2, -1), (2, -1), 12),
+                ('TEXTCOLOR', (2, -1), (2, -1), colors.HexColor('#4CAF50')),
+                ('LINEABOVE', (1, -1), (2, -1), 2, colors.HexColor('#4CAF50')),
             ]))
             
             elements.append(totals_table)
+            elements.append(Spacer(1, 0.1*inch))
+            
+            # ✅ Amount in words - SEPARATE ROW with full width
+            grand_total_int = int(bill['grand_total'])
+            amount_in_words = gst_calculator.number_to_words(grand_total_int)
+            
+            amount_words_data = [
+                ['RUPEES:', amount_in_words.upper()]
+            ]
+            
+            amount_words_table = Table(amount_words_data, colWidths=[1*inch, 5.5*inch])
+            amount_words_table.setStyle(TableStyle([
+                ('FONTNAME', (0, 0), (0, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            elements.append(amount_words_table)
             elements.append(Spacer(1, 0.3*inch))
             
             # Bank details
@@ -280,6 +297,7 @@ class PDFGenerator:
             import traceback
             traceback.print_exc()
             return False, None
+
 
 # Create global instance
 pdf_generator = PDFGenerator()

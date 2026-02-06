@@ -34,9 +34,11 @@ class BillingPage(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("background-color: #EBF4DD;")
         
         # Content widget
         content = QWidget()
+        content.setStyleSheet("background-color: #EBF4DD;")
         main_layout = QHBoxLayout(content)
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(5, 5, 5, 5)
@@ -65,12 +67,13 @@ class BillingPage(QWidget):
         panel = QFrame()
         panel.setStyleSheet("""
             QFrame {
-                background-color: white;
-                border-radius: 8px;
+                background-color: #EBF4DD;
+                border-radius: 10px;
                 padding: 15px;
+                border: 2px solid #90AB8B;
             }
         """)
-        panel.setMinimumWidth(500)  # ✅ SET MINIMUM WIDTH
+        panel.setMinimumWidth(500)
         
         layout = QVBoxLayout(panel)
         layout.setSpacing(10)
@@ -78,7 +81,7 @@ class BillingPage(QWidget):
         # Title
         title = QLabel("Add Products to Bill")
         title.setFont(QFont("Arial", 14, QFont.Bold))
-        title.setStyleSheet("color: #4CAF50;")
+        title.setStyleSheet("color: #5A7863; border: none;")
         layout.addWidget(title)
         
         # Product search section
@@ -86,13 +89,39 @@ class BillingPage(QWidget):
         
         search_label = QLabel("Search:")
         search_label.setMinimumWidth(60)
+        search_label.setStyleSheet("color: #5A7863; font-weight: bold;")
+        
         self.product_search = QLineEdit()
         self.product_search.setPlaceholderText("Type product name or scan barcode...")
         self.product_search.returnPressed.connect(self.on_search_product)
         self.product_search.setMinimumHeight(35)
+        self.product_search.setStyleSheet("""
+            QLineEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px 10px;
+                color: #3B4953;
+                font-size: 11pt;
+            }
+            QLineEdit:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         
         search_btn = QPushButton("🔍")
-        search_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 8px 15px;")
+        search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
         search_btn.setMinimumHeight(35)
         search_btn.clicked.connect(self.on_search_product)
         
@@ -104,47 +133,93 @@ class BillingPage(QWidget):
         
         # Product details section
         product_group = QGroupBox("Selected Product Details")
+        product_group.setStyleSheet("""
+            QGroupBox {
+                background-color: #5A7863;
+                border: 2px solid #90AB8B;
+                border-radius: 8px;
+                margin-top: 15px;
+                padding-top: 15px;
+                font-weight: bold;
+                color: #5A7863;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
+        
         product_layout = QGridLayout()
         product_layout.setSpacing(8)
         
         self.selected_product_label = QLabel("No product selected")
-        self.selected_product_label.setStyleSheet("color: #666; font-style: italic;")
+        self.selected_product_label.setStyleSheet("color: #90AB8B; font-style: italic;")
         self.selected_product_label.setWordWrap(True)
         
-        product_layout.addWidget(QLabel("Product:"), 0, 0)
+        label_style = "color: #3B4953; font-weight: bold;"
+        
+        product_layout.addWidget(self.create_label("Product:", label_style), 0, 0)
         product_layout.addWidget(self.selected_product_label, 0, 1, 1, 3)
         
-        product_layout.addWidget(QLabel("MRP:"), 1, 0)
+        product_layout.addWidget(self.create_label("MRP:", label_style), 1, 0)
         self.mrp_label = QLabel("₹0.00")
         self.mrp_label.setFont(QFont("Arial", 11, QFont.Bold))
+        self.mrp_label.setStyleSheet("color: #3B4953;")
         product_layout.addWidget(self.mrp_label, 1, 1)
         
-        product_layout.addWidget(QLabel("Discount:"), 1, 2)
+        product_layout.addWidget(self.create_label("Discount:", label_style), 1, 2)
         self.discount_label = QLabel("0%")
         self.discount_label.setFont(QFont("Arial", 11, QFont.Bold))
+        self.discount_label.setStyleSheet("color: #3B4953;")
         product_layout.addWidget(self.discount_label, 1, 3)
         
-        product_layout.addWidget(QLabel("Rate:"), 2, 0)
+        product_layout.addWidget(self.create_label("Rate:", label_style), 2, 0)
         self.rate_label = QLabel("₹0.00")
         self.rate_label.setFont(QFont("Arial", 12, QFont.Bold))
-        self.rate_label.setStyleSheet("color: #4CAF50;")
+        self.rate_label.setStyleSheet("color: #5A7863;")
         product_layout.addWidget(self.rate_label, 2, 1)
         
-        product_layout.addWidget(QLabel("Stock:"), 2, 2)
+        product_layout.addWidget(self.create_label("Stock:", label_style), 2, 2)
         self.stock_label = QLabel("0")
         self.stock_label.setFont(QFont("Arial", 11, QFont.Bold))
+        self.stock_label.setStyleSheet("color: #3B4953;")
         product_layout.addWidget(self.stock_label, 2, 3)
         
-        product_layout.addWidget(QLabel("Quantity:"), 3, 0)
+        product_layout.addWidget(self.create_label("Quantity:", label_style), 3, 0)
         self.quantity_spin = QSpinBox()
         self.quantity_spin.setMinimum(1)
         self.quantity_spin.setMaximum(10000)
         self.quantity_spin.setValue(1)
         self.quantity_spin.setMinimumHeight(30)
+        self.quantity_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+                font-weight: bold;
+            }
+            QSpinBox:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         product_layout.addWidget(self.quantity_spin, 3, 1)
         
         add_btn = QPushButton("➕ Add to Cart")
-        add_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
+        add_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3B4953;
+                color: #EBF4DD;
+                font-weight: bold;
+                padding: 8px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
         add_btn.setMinimumHeight(30)
         add_btn.clicked.connect(self.add_to_cart)
         product_layout.addWidget(add_btn, 3, 2, 1, 2)
@@ -155,6 +230,7 @@ class BillingPage(QWidget):
         # Cart table
         cart_label = QLabel("Shopping Cart")
         cart_label.setFont(QFont("Arial", 12, QFont.Bold))
+        cart_label.setStyleSheet("color: #5A7863; border: none;")
         layout.addWidget(cart_label)
         
         self.cart_table = QTableWidget()
@@ -166,7 +242,28 @@ class BillingPage(QWidget):
         self.cart_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.cart_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.cart_table.setAlternatingRowColors(True)
-        self.cart_table.setMinimumHeight(200)  # ✅ SET MINIMUM HEIGHT
+        self.cart_table.setMinimumHeight(200)
+        self.cart_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #90AB8B;
+                alternate-background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                gridline-color: #90AB8B;
+                color: #3B4953;
+            }
+            QTableWidget::item:selected {
+                background-color: #90AB8B;
+                color: #EBF4DD;
+            }
+            QHeaderView::section {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px;
+                border: none;
+                font-weight: bold;
+            }
+        """)
         
         layout.addWidget(self.cart_table)
         
@@ -174,11 +271,33 @@ class BillingPage(QWidget):
         cart_actions = QHBoxLayout()
         
         remove_btn = QPushButton("🗑️ Remove Selected")
-        remove_btn.setStyleSheet("background-color: #f44336; color: white; padding: 8px;")
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3B4953;
+                color: #EBF4DD;
+                padding: 8px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5A7863;
+            }
+        """)
         remove_btn.clicked.connect(self.remove_from_cart)
         
         clear_btn = QPushButton("🧹 Clear Cart")
-        clear_btn.setStyleSheet("background-color: #FF9800; color: white; padding: 8px;")
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #90AB8B;
+                color: #EBF4DD;
+                padding: 8px;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5A7863;
+            }
+        """)
         clear_btn.clicked.connect(self.clear_cart)
         
         cart_actions.addWidget(remove_btn)
@@ -189,40 +308,73 @@ class BillingPage(QWidget):
         
         return panel
     
+    def create_label(self, text: str, style: str = "") -> QLabel:
+        """Helper to create styled labels"""
+        label = QLabel(text)
+        if style:
+            label.setStyleSheet(style)
+        return label
+    
     def create_right_panel(self) -> QFrame:
         """Create right panel with customer info and totals"""
         panel = QFrame()
         panel.setStyleSheet("""
             QFrame {
-                background-color: white;
-                border-radius: 8px;
+                background-color: #EBF4DD;
+                border-radius: 10px;
                 padding: 15px;
+                border: 2px solid #90AB8B;
             }
         """)
-        panel.setMinimumWidth(350)  # ✅ SET MINIMUM WIDTH
-        panel.setMaximumWidth(500)  # ✅ SET MAXIMUM WIDTH
+        panel.setMinimumWidth(350)
+        panel.setMaximumWidth(500)
         
         # ✅ ADD SCROLL AREA FOR RIGHT PANEL
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background-color: transparent; border: none;")
         
         content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
         layout = QVBoxLayout(content)
         layout.setSpacing(10)
         
         # Title
         title = QLabel("Customer & Billing")
         title.setFont(QFont("Arial", 14, QFont.Bold))
-        title.setStyleSheet("color: #4CAF50;")
+        title.setStyleSheet("color: #5A7863; border: none;")
         layout.addWidget(title)
         
         # Sales Person Selection
         sp_layout = QHBoxLayout()
-        sp_layout.addWidget(QLabel("Sales Person: *"))
+        sp_label = QLabel("Sales Person: *")
+        sp_label.setStyleSheet("color: #3B4953; font-weight: bold;")
+        sp_layout.addWidget(sp_label)
+        
         self.sales_person_combo = QComboBox()
-        self.sales_person_combo.setStyleSheet("padding: 5px; font-weight: bold;")
+        self.sales_person_combo.setStyleSheet("""
+            QComboBox {
+                padding: 5px;
+                font-weight: bold;
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                color: #3B4953;
+            }
+            QComboBox:focus {
+                border: 2px solid #5A7863;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #EBF4DD;
+                selection-background-color: #90AB8B;
+                selection-color: #EBF4DD;
+            }
+        """)
         self.sales_person_combo.setMinimumHeight(30)
         sp_layout.addWidget(self.sales_person_combo, 1)
         layout.addLayout(sp_layout)
@@ -230,7 +382,22 @@ class BillingPage(QWidget):
         # GST Bill Toggle
         gst_layout = QHBoxLayout()
         self.gst_bill_checkbox = QCheckBox("GST Bill (5% Tax)")
-        self.gst_bill_checkbox.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.gst_bill_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-weight: bold;
+                color: #5A7863;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border: 2px solid #90AB8B;
+                border-radius: 4px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #5A7863;
+                border: 2px solid #5A7863;
+            }
+        """)
         self.gst_bill_checkbox.stateChanged.connect(self.on_gst_toggle)
         gst_layout.addWidget(self.gst_bill_checkbox)
         gst_layout.addStretch()
@@ -238,6 +405,24 @@ class BillingPage(QWidget):
         
         # Customer info
         customer_group = QGroupBox("Customer Information")
+        customer_group.setStyleSheet("""
+            QGroupBox {
+                background-color: #5A7863;
+                border: 2px solid #90AB8B;
+                border-radius: 8px;
+                margin-top: 20px;
+                padding-top: 15px;
+                padding-bottom: 15px;
+                font-weight: bold;
+                color: #3B4953;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                padding-bottom: 15px;
+            }
+        """)
         customer_layout = QVBoxLayout()
         customer_layout.setSpacing(8)
         
@@ -245,10 +430,24 @@ class BillingPage(QWidget):
         search_customer_layout = QHBoxLayout()
         search_customer_label = QLabel("Search:")
         search_customer_label.setMinimumWidth(60)
+        search_customer_label.setStyleSheet("color: #EBF4DD; font-weight: bold;")
+        
         self.customer_search = QLineEdit()
         self.customer_search.setPlaceholderText("Name or phone...")
         self.customer_search.textChanged.connect(self.on_customer_search)
         self.customer_search.setMinimumHeight(30)
+        self.customer_search.setStyleSheet("""
+            QLineEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+            }
+            QLineEdit:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         
         search_customer_layout.addWidget(search_customer_label)
         search_customer_layout.addWidget(self.customer_search)
@@ -257,35 +456,84 @@ class BillingPage(QWidget):
         # Separator
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
-        separator.setStyleSheet("background-color: #ddd;")
+        separator.setStyleSheet("background-color: #90AB8B;")
         customer_layout.addWidget(separator)
         
-        customer_layout.addWidget(QLabel("Customer Name: *"))
+        customer_layout.addWidget(self.create_label("Customer Name: *", "color: #EBF4DD; font-weight: bold;"))
         self.customer_name = QLineEdit()
         self.customer_name.setPlaceholderText("Enter customer name")
         self.customer_name.setMinimumHeight(30)
+        self.customer_name.setStyleSheet("""
+            QLineEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+            }
+            QLineEdit:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         customer_layout.addWidget(self.customer_name)
         
-        customer_layout.addWidget(QLabel("Phone:"))
+        customer_layout.addWidget(self.create_label("Phone:", "color: #EBF4DD; font-weight: bold;"))
         self.customer_phone = QLineEdit()
         self.customer_phone.setPlaceholderText("Enter phone number")
         self.customer_phone.setMinimumHeight(30)
+        self.customer_phone.setStyleSheet("""
+            QLineEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+            }
+            QLineEdit:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         customer_layout.addWidget(self.customer_phone)
         
-        customer_layout.addWidget(QLabel("Address:"))
+        customer_layout.addWidget(self.create_label("Address:", "color: #EBF4DD; font-weight: bold;"))
         self.customer_address = QTextEdit()
         self.customer_address.setPlaceholderText("Enter address")
         self.customer_address.setMaximumHeight(60)
+        self.customer_address.setStyleSheet("""
+            QTextEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+            }
+            QTextEdit:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         customer_layout.addWidget(self.customer_address)
         
         # GSTIN field (shown only for GST bills)
         self.gstin_label = QLabel("GSTIN: *")
+        self.gstin_label.setStyleSheet("color: #3B4953; font-weight: bold;")
         self.gstin_label.setVisible(False)
         customer_layout.addWidget(self.gstin_label)
         
         self.customer_gstin = QLineEdit()
         self.customer_gstin.setPlaceholderText("Enter GSTIN")
         self.customer_gstin.setMinimumHeight(30)
+        self.customer_gstin.setStyleSheet("""
+            QLineEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+            }
+            QLineEdit:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
         self.customer_gstin.setVisible(False)
         customer_layout.addWidget(self.customer_gstin)
         
@@ -294,41 +542,60 @@ class BillingPage(QWidget):
         
         # Bill summary
         summary_group = QGroupBox("Bill Summary")
+        summary_group.setStyleSheet("""
+            QGroupBox {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 15px;
+                font-weight: bold;
+                color: #5A7863;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
         summary_layout = QVBoxLayout()
         summary_layout.setSpacing(5)
         
         self.item_count_label = QLabel("Items: 0")
         self.item_count_label.setFont(QFont("Arial", 11))
+        self.item_count_label.setStyleSheet("color: #3B4953;")
         summary_layout.addWidget(self.item_count_label)
         
         self.subtotal_label = QLabel("Subtotal: ₹0.00")
         self.subtotal_label.setFont(QFont("Arial", 11))
+        self.subtotal_label.setStyleSheet("color: #3B4953;")
         summary_layout.addWidget(self.subtotal_label)
         
         self.discount_total_label = QLabel("Total Discount: ₹0.00")
         self.discount_total_label.setFont(QFont("Arial", 11))
-        self.discount_total_label.setStyleSheet("color: #f44336;")
+        self.discount_total_label.setStyleSheet("color: #90AB8B; font-weight: bold;")
         summary_layout.addWidget(self.discount_total_label)
         
         # GST details (hidden by default)
         self.gst_frame = QFrame()
+        self.gst_frame.setStyleSheet("background-color: transparent; border: none;")
         gst_details_layout = QVBoxLayout(self.gst_frame)
         gst_details_layout.setContentsMargins(0, 0, 0, 0)
         gst_details_layout.setSpacing(5)
         
         self.cgst_label = QLabel("CGST @ 2.5%: ₹0.00")
         self.cgst_label.setFont(QFont("Arial", 11))
-        self.cgst_label.setStyleSheet("color: #2196F3;")
+        self.cgst_label.setStyleSheet("color: #5A7863;")
         gst_details_layout.addWidget(self.cgst_label)
         
         self.sgst_label = QLabel("SGST @ 2.5%: ₹0.00")
         self.sgst_label.setFont(QFont("Arial", 11))
-        self.sgst_label.setStyleSheet("color: #2196F3;")
+        self.sgst_label.setStyleSheet("color: #5A7863;")
         gst_details_layout.addWidget(self.sgst_label)
         
         self.total_tax_label = QLabel("Total Tax: ₹0.00")
         self.total_tax_label.setFont(QFont("Arial", 11, QFont.Bold))
-        self.total_tax_label.setStyleSheet("color: #2196F3;")
+        self.total_tax_label.setStyleSheet("color: #5A7863;")
         gst_details_layout.addWidget(self.total_tax_label)
         
         self.gst_frame.setVisible(False)
@@ -336,19 +603,27 @@ class BillingPage(QWidget):
         
         self.roundoff_label = QLabel("Round Off: ₹0.00")
         self.roundoff_label.setFont(QFont("Arial", 11))
+        self.roundoff_label.setStyleSheet("color: #3B4953;")
         summary_layout.addWidget(self.roundoff_label)
         
         # Grand total
         grand_total_frame = QFrame()
-        grand_total_frame.setStyleSheet("background-color: #4CAF50; padding: 10px; border-radius: 5px;")
+        grand_total_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5A7863, stop:1 #3B4953);
+                padding: 10px;
+                border-radius: 8px;
+            }
+        """)
         grand_total_layout = QHBoxLayout(grand_total_frame)
         
         grand_label = QLabel("GRAND TOTAL:")
-        grand_label.setStyleSheet("color: white; font-weight: bold;")
+        grand_label.setStyleSheet("color: #EBF4DD; font-weight: bold;")
         grand_label.setFont(QFont("Arial", 12))
         
         self.grand_total_label = QLabel("₹0.00")
-        self.grand_total_label.setStyleSheet("color: white; font-weight: bold;")
+        self.grand_total_label.setStyleSheet("color: #EBF4DD; font-weight: bold;")
         self.grand_total_label.setFont(QFont("Arial", 16))
         
         grand_total_layout.addWidget(grand_label)
@@ -364,15 +639,20 @@ class BillingPage(QWidget):
         generate_btn = QPushButton("💰 Generate Bill")
         generate_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4CAF50;
-                color: white;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5A7863, stop:1 #90AB8B);
+                color: #EBF4DD;
                 font-size: 16px;
                 font-weight: bold;
                 padding: 15px;
-                border-radius: 5px;
+                border-radius: 8px;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #90AB8B, stop:1 #5A7863);
+            }
+            QPushButton:pressed {
+                background: #3B4953;
             }
         """)
         generate_btn.setMinimumHeight(50)
@@ -443,7 +723,7 @@ class BillingPage(QWidget):
         results = inventory_manager.search_products(search_text)
         
         if not results:
-            QMessageBox.warning(self, "Not Found", "Product not found")
+            self.show_styled_message("Not Found", "Product not found", QMessageBox.Warning)
             return
         
         if len(results) == 1:
@@ -451,29 +731,62 @@ class BillingPage(QWidget):
             self.display_product_details()
         else:
             # Show selection dialog
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Select Product")
-            dialog.setMinimumWidth(400)
-            
-            layout = QVBoxLayout()
-            list_widget = QListWidget()
-            
-            for product in results:
-                list_widget.addItem(f"{product['name']} - Stock: {product['current_stock']}")
-            
-            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-            buttons.accepted.connect(dialog.accept)
-            buttons.rejected.connect(dialog.reject)
-            
-            layout.addWidget(QLabel("Multiple products found. Please select one:"))
-            layout.addWidget(list_widget)
-            layout.addWidget(buttons)
-            
-            dialog.setLayout(layout)
-            
-            if dialog.exec_() == QDialog.Accepted and list_widget.currentRow() >= 0:
-                self.current_product = results[list_widget.currentRow()]
-                self.display_product_details()
+            self.show_product_selection_dialog(results)
+    
+    def show_product_selection_dialog(self, results):
+        """Show dialog to select from multiple products"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Product")
+        dialog.setMinimumWidth(400)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+            }
+            QListWidget {
+                background-color: white;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                color: #3B4953;
+            }
+            QListWidget::item:selected {
+                background-color: #90AB8B;
+                color: #EBF4DD;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        list_widget = QListWidget()
+        
+        for product in results:
+            list_widget.addItem(f"{product['name']} - Stock: {product['current_stock']}")
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        
+        layout.addWidget(QLabel("Multiple products found. Please select one:"))
+        layout.addWidget(list_widget)
+        layout.addWidget(buttons)
+        
+        dialog.setLayout(layout)
+        
+        if dialog.exec_() == QDialog.Accepted and list_widget.currentRow() >= 0:
+            self.current_product = results[list_widget.currentRow()]
+            self.display_product_details()
     
     def display_product_details(self):
         """Display selected product details"""
@@ -483,7 +796,7 @@ class BillingPage(QWidget):
         p = self.current_product
         
         self.selected_product_label.setText(p['name'])
-        self.selected_product_label.setStyleSheet("color: #333; font-weight: bold;")
+        self.selected_product_label.setStyleSheet("color: #5A7863; font-weight: bold;")
         
         self.mrp_label.setText(f"₹{p['mrp']:.2f}")
         self.discount_label.setText(f"{p['discount_percent']:.0f}%")
@@ -501,7 +814,7 @@ class BillingPage(QWidget):
     def add_to_cart(self):
         """Add selected product to cart"""
         if not self.current_product:
-            QMessageBox.warning(self, "No Product", "Please select a product first")
+            self.show_styled_message("No Product", "Please select a product first", QMessageBox.Warning)
             return
         
         quantity = self.quantity_spin.value()
@@ -516,13 +829,13 @@ class BillingPage(QWidget):
             self.product_search.setFocus()
             self.current_product = None
             self.selected_product_label.setText("No product selected")
-            self.selected_product_label.setStyleSheet("color: #666; font-style: italic;")
+            self.selected_product_label.setStyleSheet("color: #5A7863; font-style: italic;")
             self.mrp_label.setText("₹0.00")
             self.discount_label.setText("0%")
             self.rate_label.setText("₹0.00")
             self.stock_label.setText("0")
         else:
-            QMessageBox.warning(self, "Error", message)
+            self.show_styled_message("Error", message, QMessageBox.Warning)
     
     def refresh_cart(self):
         """Refresh cart display and totals"""
@@ -564,7 +877,7 @@ class BillingPage(QWidget):
         current_row = self.cart_table.currentRow()
         
         if current_row < 0:
-            QMessageBox.warning(self, "No Selection", "Please select an item to remove")
+            self.show_styled_message("No Selection", "Please select an item to remove", QMessageBox.Warning)
             return
         
         billing_manager.remove_item_from_cart(current_row)
@@ -575,11 +888,13 @@ class BillingPage(QWidget):
         if not billing_manager.get_cart_items():
             return
         
-        reply = QMessageBox.question(
-            self, "Clear Cart",
-            "Are you sure you want to clear the entire cart?",
-            QMessageBox.Yes | QMessageBox.No
-        )
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Clear Cart")
+        msg_box.setText("Are you sure you want to clear the entire cart?")
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg_box.setStyleSheet(self.get_message_box_style())
+        
+        reply = msg_box.exec_()
         
         if reply == QMessageBox.Yes:
             billing_manager.clear_cart()
@@ -589,20 +904,20 @@ class BillingPage(QWidget):
         """Generate bill"""
         # Validate cart
         if not billing_manager.get_cart_items():
-            QMessageBox.warning(self, "Empty Cart", "Please add items to cart first")
+            self.show_styled_message("Empty Cart", "Please add items to cart first", QMessageBox.Warning)
             return
         
         # Validate customer name
         customer_name = self.customer_name.text().strip()
         if not customer_name:
-            QMessageBox.warning(self, "Validation Error", "Customer name is required")
+            self.show_styled_message("Validation Error", "Customer name is required", QMessageBox.Warning)
             self.customer_name.setFocus()
             return
         
         # Validate sales person
         sales_person_id = self.sales_person_combo.currentData()
         if not sales_person_id:
-            QMessageBox.warning(self, "Validation Error", "Please select a sales person")
+            self.show_styled_message("Validation Error", "Please select a sales person", QMessageBox.Warning)
             return
         
         # Validate GSTIN for GST bills
@@ -610,7 +925,7 @@ class BillingPage(QWidget):
         customer_gstin = self.customer_gstin.text().strip()
         
         if is_gst_bill and not customer_gstin:
-            QMessageBox.warning(self, "Validation Error", "GSTIN is required for GST bills")
+            self.show_styled_message("Validation Error", "GSTIN is required for GST bills", QMessageBox.Warning)
             self.customer_gstin.setFocus()
             return
         
@@ -648,12 +963,13 @@ class BillingPage(QWidget):
                 self.refresh_cart()
                 self.clear_form()
             else:
-                QMessageBox.warning(
-                    self, "PDF Error",
-                    f"Bill saved but PDF generation failed.\n\nInvoice No: {bill_data['invoice_number']}"
+                self.show_styled_message(
+                    "PDF Error",
+                    f"Bill saved but PDF generation failed.\n\nInvoice No: {bill_data['invoice_number']}",
+                    QMessageBox.Warning
                 )
         else:
-            QMessageBox.warning(self, "Error", message)
+            self.show_styled_message("Error", message, QMessageBox.Warning)
     
     def clear_form(self):
         """Clear customer form"""
@@ -692,6 +1008,35 @@ class BillingPage(QWidget):
         dialog = QDialog(self)
         dialog.setWindowTitle("Select Customer")
         dialog.setMinimumWidth(450)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+            }
+            QListWidget {
+                background-color: white;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                color: #3B4953;
+            }
+            QListWidget::item:selected {
+                background-color: #90AB8B;
+                color: #EBF4DD;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """)
         
         layout = QVBoxLayout()
         
@@ -726,9 +1071,10 @@ class BillingPage(QWidget):
         self.customer_gstin.setText(customer.get('gstin', ''))
         
         # Show info message
-        QMessageBox.information(
-            self, "Customer Loaded",
-            f"Customer details loaded: {customer['name']}\n\nYou can edit the information if needed."
+        self.show_styled_message(
+            "Customer Loaded",
+            f"Customer details loaded: {customer['name']}\n\nYou can edit the information if needed.",
+            QMessageBox.Information
         )
         
         # Clear search field
@@ -746,3 +1092,35 @@ class BillingPage(QWidget):
         app_signals.inventory_updated.emit()
     
         logger.info("Application refreshed after bill generation")
+    
+    def show_styled_message(self, title: str, message: str, icon=QMessageBox.Information):
+        """Show styled message box"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(icon)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet(self.get_message_box_style())
+        msg_box.exec_()
+    
+    def get_message_box_style(self) -> str:
+        """Get consistent message box styling"""
+        return """
+            QMessageBox {
+                background-color: #EBF4DD;
+            }
+            QLabel {
+                color: #3B4953;
+                font-size: 11pt;
+            }
+            QPushButton {
+                background-color: #5A7863;
+                color: #EBF4DD;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #90AB8B;
+            }
+        """
