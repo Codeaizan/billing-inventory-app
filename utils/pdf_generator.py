@@ -69,6 +69,20 @@ class PDFGenerator:
                 spaceAfter=10
             )
             
+            # ✅ Invoice Number at the very top - CENTER ALIGNED
+            invoice_header_style = ParagraphStyle(
+                'InvoiceHeader',
+                parent=styles['Normal'],
+                fontSize=11,
+                fontName='Helvetica-Bold',
+                alignment=TA_CENTER,
+                spaceAfter=8
+            )
+            
+            invoice_header_text = f"<b>Invoice No: {bill['invoice_number']}</b>"
+            elements.append(Paragraph(invoice_header_text, invoice_header_style))
+            elements.append(Spacer(1, 0.05*inch))
+            
             # Company Header
             elements.append(Paragraph(company_settings.get('company_name', 'Natural Health World'), title_style))
             elements.append(Paragraph(company_settings.get('company_tagline', 'The Herbal Healing'), subtitle_style))
@@ -95,19 +109,18 @@ class PDFGenerator:
             elements.append(invoice_title)
             elements.append(Spacer(1, 0.1*inch))
             
-            # Invoice details and customer details side by side
+            # Invoice date only (invoice number already at top)
             invoice_date = datetime.strptime(bill['created_at'], '%Y-%m-%d %H:%M:%S').strftime('%d.%m.%Y')
             
             details_data = [
-                ['Invoice No:', bill['invoice_number'], 'Date:', invoice_date],
+                ['Date:', invoice_date],
             ]
             
-            details_table = Table(details_data, colWidths=[1.5*inch, 2*inch, 1*inch, 1.5*inch])
+            details_table = Table(details_data, colWidths=[1*inch, 5.5*inch])
             details_table.setStyle(TableStyle([
                 ('FONTSIZE', (0, 0), (-1, -1), 10),
                 ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
                 ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-                ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
             ]))
             
             elements.append(details_table)
@@ -203,22 +216,35 @@ class PDFGenerator:
             elements.append(items_table)
             elements.append(Spacer(1, 0.2*inch))
             
-            # ✅ FIXED: Totals section - separate amount in words from grand total
+            # Totals section
             if is_gst_bill:
-                # GST Bill - Show tax breakdown
+                cgst = bill.get('cgst_amount', 0.0)
+                sgst = bill.get('sgst_amount', 0.0)
+                igst = bill.get('igst_amount', 0.0)
+
                 totals_data = [
                     ['', 'SUBTOTAL (Taxable Amount)', f"{bill['subtotal']:.2f}"],
-                    ['', f"CGST @ 2.5%", f"{bill['cgst_amount']:.2f}"],
-                    ['', f"SGST @ 2.5%", f"{bill['sgst_amount']:.2f}"],
+                ]
+
+                if igst > 0:
+                    # Inter-state: IGST only (5%)
+                    totals_data.append(['', "IGST @ 5%", f"{igst:.2f}"])
+                else:
+                    # Intra-state: CGST + SGST (2.5% + 2.5%)
+                    totals_data.append(['', "CGST @ 2.5%", f"{cgst:.2f}"])
+                    totals_data.append(['', "SGST @ 2.5%", f"{sgst:.2f}"])
+
+                totals_data.extend([
                     ['', 'TOTAL TAX', f"{bill['total_tax']:.2f}"],
                     ['', 'ROUND OFF', f"{bill['round_off']:.2f}"],
-                ]
+                ])
             else:
                 # Non-GST Bill - Simple totals
                 totals_data = [
                     ['', 'SUBTOTAL', f"{bill['subtotal']:.2f}"],
                     ['', 'ROUND OFF', f"{bill['round_off']:.2f}"],
                 ]
+
             
             # Grand Total row
             totals_data.append(['', 'GRAND TOTAL', f"{bill['grand_total']:.2f}"])
@@ -238,7 +264,7 @@ class PDFGenerator:
             elements.append(totals_table)
             elements.append(Spacer(1, 0.1*inch))
             
-            # ✅ Amount in words - SEPARATE ROW with full width
+            # Amount in words - SEPARATE ROW with full width
             grand_total_int = int(bill['grand_total'])
             amount_in_words = gst_calculator.number_to_words(grand_total_int)
             
@@ -258,12 +284,23 @@ class PDFGenerator:
             elements.append(amount_words_table)
             elements.append(Spacer(1, 0.3*inch))
             
-            # Bank details
-            bank_info = f"<b>BANK NAME:</b> {company_settings.get('bank_name', '')}<br/>" \
-                       f"<b>ACCOUNT NO:</b> {company_settings.get('bank_account_no', '')} - " \
-                       f"<b>IFSC CODE:</b> {company_settings.get('bank_ifsc', '')}"
+            # Bank details - Use appropriate bank based on bill type
+            bank_details = company_settings.get_bank_details(is_gst_bill)
+            bank_info = f"BANK NAME: {bank_details['bank_name']}"
+
+            # Add branch if available
+            if bank_details.get('bank_branch'):
+                bank_info += f" - BRANCH: {bank_details['bank_branch']}"
+
+            bank_info += f"<br/>ACCOUNT NO: {bank_details['bank_account_no']} | " \
+                        f"IFSC CODE: {bank_details['bank_ifsc']}"
+
+            # Add UPI if available
+            if bank_details.get('upi_id'):
+                bank_info += f"<br/>UPI ID: {bank_details['upi_id']}"
+
             elements.append(Paragraph(bank_info, styles['Normal']))
-            elements.append(Spacer(1, 0.2*inch))
+
             
             # Note
             invoice_note = company_settings.get('invoice_note', '')
@@ -274,8 +311,8 @@ class PDFGenerator:
             
             # Terms and conditions for GST bills
             if is_gst_bill:
-                terms_text = "<b>Terms & Conditions:</b><br/>1. Goods once sold will not be taken back.<br/>" \
-                           "2. Interest @ 18% will be charged if payment is not made within 7 days."
+                terms_text = "" \
+                           ""
                 terms_style = ParagraphStyle('Terms', parent=styles['Normal'], fontSize=8)
                 elements.append(Paragraph(terms_text, terms_style))
                 elements.append(Spacer(1, 0.2*inch))

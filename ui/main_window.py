@@ -1,11 +1,12 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QTabWidget, QPushButton, QLabel, QMessageBox,
-                            QStatusBar, QAction, QMenuBar, QApplication)
+                            QStatusBar, QAction, QMenuBar, QApplication, QDialog)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QIcon
 from datetime import datetime
 from config import APP_NAME, COMPANY_NAME, APP_VERSION
 from modules.auth import auth_manager
+from ui.company_settings_dialog import CompanySettingsDialog
 from utils.logger import logger
 
 
@@ -221,6 +222,19 @@ class MainWindow(QMainWindow):
         normal_action = QAction("Normal Size", self)
         normal_action.triggered.connect(self.showNormal)
         view_menu.addAction(normal_action)
+        
+        # Settings menu
+        settings_menu = menubar.addMenu("&Settings")
+        
+        company_settings_action = QAction("⚙️ Company Settings", self)
+        company_settings_action.triggered.connect(self.open_company_settings)
+        settings_menu.addAction(company_settings_action)
+        
+        settings_menu.addSeparator()
+        
+        banking_settings_action = QAction("🏦 Banking Details", self)
+        banking_settings_action.triggered.connect(self.open_banking_settings)
+        settings_menu.addAction(banking_settings_action)
         
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -455,6 +469,23 @@ class MainWindow(QMainWindow):
             }
         """)
         msg_box.exec_()
+    
+    def open_company_settings(self):
+        """Open company settings dialog"""
+        dialog = CompanySettingsDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            # Settings saved successfully
+            logger.info("Company settings updated")
+            self.status_bar.showMessage("Company settings updated successfully", 3000)
+    
+    def open_banking_settings(self):
+        """Open banking settings dialog (directly to Banking tab)"""
+        dialog = CompanySettingsDialog(self)
+        # Switch to Banking Details tab (index 1)
+        dialog.findChild(QTabWidget).setCurrentIndex(1)
+        if dialog.exec_() == QDialog.Accepted:
+            logger.info("Banking settings updated")
+            self.status_bar.showMessage("Banking settings updated successfully", 3000)
     
     def closeEvent(self, event):
         """Handle window close event"""

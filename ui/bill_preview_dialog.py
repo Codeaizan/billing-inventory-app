@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
 from utils.logger import logger
 
+
 class BillPreviewDialog(QDialog):
     """Dialog to preview bill after generation"""
     
@@ -124,7 +125,7 @@ class BillPreviewDialog(QDialog):
         is_gst = "Yes" if self.bill_data.get('is_gst_bill', 0) == 1 else "No"
         gst_label = self.create_detail_label("GST Bill:", is_gst)
         if is_gst == "Yes":
-            gst_label.setStyleSheet("color: #2196F3; font-weight: bold;")
+            gst_label.setStyleSheet("color: #2196F3; font-weight: bold; padding: 5px; font-size: 11px;")
         right_col.addWidget(gst_label)
         
         invoice_layout.addLayout(left_col, 1)
@@ -147,16 +148,10 @@ class BillPreviewDialog(QDialog):
         
         is_gst_bill = self.bill_data.get('is_gst_bill', 0) == 1
         
-        if is_gst_bill:
-            table.setColumnCount(7)
-            table.setHorizontalHeaderLabels([
-                "S.No", "Product", "Qty", "MRP", "Disc%", "Rate", "Amount"
-            ])
-        else:
-            table.setColumnCount(7)
-            table.setHorizontalHeaderLabels([
-                "S.No", "Product", "Qty", "MRP", "Disc%", "Rate", "Amount"
-            ])
+        table.setColumnCount(7)
+        table.setHorizontalHeaderLabels([
+            "S.No", "Product", "Qty", "MRP", "Disc%", "Rate", "Amount"
+        ])
         
         table.setRowCount(len(self.bill_data['items']))
         
@@ -196,13 +191,22 @@ class BillPreviewDialog(QDialog):
         
         # GST breakdown if applicable
         if self.bill_data.get('is_gst_bill', 0) == 1:
-            cgst_label = QLabel(f"<b>CGST @ 2.5%:</b> ₹{self.bill_data['cgst_amount']:.2f}")
-            cgst_label.setStyleSheet("font-size: 12px; padding: 3px; color: #2196F3;")
-            layout.addWidget(cgst_label)
+            cgst = float(self.bill_data.get('cgst_amount', 0.0) or 0.0)
+            sgst = float(self.bill_data.get('sgst_amount', 0.0) or 0.0)
+            igst = float(self.bill_data.get('igst_amount', 0.0) or 0.0)
             
-            sgst_label = QLabel(f"<b>SGST @ 2.5%:</b> ₹{self.bill_data['sgst_amount']:.2f}")
-            sgst_label.setStyleSheet("font-size: 12px; padding: 3px; color: #2196F3;")
-            layout.addWidget(sgst_label)
+            if igst > 0:
+                igst_label = QLabel(f"<b>IGST @ 5%:</b> ₹{igst:.2f}")
+                igst_label.setStyleSheet("font-size: 12px; padding: 3px; color: #2196F3;")
+                layout.addWidget(igst_label)
+            else:
+                cgst_label = QLabel(f"<b>CGST @ 2.5%:</b> ₹{cgst:.2f}")
+                cgst_label.setStyleSheet("font-size: 12px; padding: 3px; color: #2196F3;")
+                layout.addWidget(cgst_label)
+                
+                sgst_label = QLabel(f"<b>SGST @ 2.5%:</b> ₹{sgst:.2f}")
+                sgst_label.setStyleSheet("font-size: 12px; padding: 3px; color: #2196F3;")
+                layout.addWidget(sgst_label)
             
             total_tax_label = QLabel(f"<b>Total Tax:</b> ₹{self.bill_data['total_tax']:.2f}")
             total_tax_label.setStyleSheet("font-size: 12px; padding: 3px; color: #2196F3; font-weight: bold;")

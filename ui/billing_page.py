@@ -2,13 +2,15 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                             QComboBox, QSpinBox, QTextEdit, QMessageBox, QFrame,
                             QHeaderView, QCompleter, QGroupBox, QGridLayout, QCheckBox,
-                            QDialog, QListWidget, QDialogButtonBox, QScrollArea)
+                            QDialog, QListWidget, QDialogButtonBox, QScrollArea, QDoubleSpinBox)
 from PyQt5.QtCore import Qt, QStringListModel
 from PyQt5.QtGui import QFont, QColor
 from modules.billing import billing_manager
 from modules.inventory import inventory_manager
 from modules.gst_calculator import gst_calculator
 from modules.auth import auth_manager
+from utils.gst_states import get_state_from_gstin
+from utils.company_settings import company_settings
 from database.db_manager import db
 from utils.signals import app_signals
 from utils.logger import logger
@@ -28,7 +30,7 @@ class BillingPage(QWidget):
     
     def init_ui(self):
         """Initialize the user interface"""
-        # ✅ CREATE SCROLL AREA
+        # CREATE SCROLL AREA
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -52,10 +54,10 @@ class BillingPage(QWidget):
         main_layout.addWidget(left_panel, 65)
         main_layout.addWidget(right_panel, 35)
         
-        # ✅ SET CONTENT TO SCROLL AREA
+        # SET CONTENT TO SCROLL AREA
         scroll.setWidget(content)
         
-        # ✅ MAIN LAYOUT FOR PAGE
+        # MAIN LAYOUT FOR PAGE
         page_layout = QVBoxLayout()
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.addWidget(scroll)
@@ -168,11 +170,31 @@ class BillingPage(QWidget):
         self.mrp_label.setStyleSheet("color: #3B4953;")
         product_layout.addWidget(self.mrp_label, 1, 1)
         
-        product_layout.addWidget(self.create_label("Discount:", label_style), 1, 2)
-        self.discount_label = QLabel("0%")
-        self.discount_label.setFont(QFont("Arial", 11, QFont.Bold))
-        self.discount_label.setStyleSheet("color: #3B4953;")
-        product_layout.addWidget(self.discount_label, 1, 3)
+        # Discount input (QDoubleSpinBox)
+        product_layout.addWidget(self.create_label("Discount %:", label_style), 1, 2)
+        self.discount_input = QDoubleSpinBox()
+        self.discount_input.setMinimum(0)
+        self.discount_input.setMaximum(100)
+        self.discount_input.setSingleStep(1)
+        self.discount_input.setValue(0)
+        self.discount_input.setDecimals(1)
+        self.discount_input.setSuffix("%")
+        self.discount_input.setMinimumHeight(30)
+        self.discount_input.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 5px;
+                color: #3B4953;
+                font-weight: bold;
+            }
+            QDoubleSpinBox:focus {
+                border: 2px solid #5A7863;
+            }
+        """)
+        self.discount_input.valueChanged.connect(self.update_rate_from_discount)
+        product_layout.addWidget(self.discount_input, 1, 3)
         
         product_layout.addWidget(self.create_label("Rate:", label_style), 2, 0)
         self.rate_label = QLabel("₹0.00")
@@ -329,7 +351,7 @@ class BillingPage(QWidget):
         panel.setMinimumWidth(350)
         panel.setMaximumWidth(500)
         
-        # ✅ ADD SCROLL AREA FOR RIGHT PANEL
+        # ADD SCROLL AREA FOR RIGHT PANEL
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -534,8 +556,15 @@ class BillingPage(QWidget):
                 border: 2px solid #5A7863;
             }
         """)
+        self.customer_gstin.textChanged.connect(self.on_gstin_changed)
         self.customer_gstin.setVisible(False)
         customer_layout.addWidget(self.customer_gstin)
+        
+        # State from GSTIN label
+        self.gstin_state_label = QLabel("State from GSTIN: -")
+        self.gstin_state_label.setStyleSheet("color: #EBF4DD; font-style: italic;")
+        self.gstin_state_label.setVisible(False)
+        customer_layout.addWidget(self.gstin_state_label)
         
         customer_group.setLayout(customer_layout)
         layout.addWidget(customer_group)
@@ -592,6 +621,13 @@ class BillingPage(QWidget):
         self.sgst_label.setFont(QFont("Arial", 11))
         self.sgst_label.setStyleSheet("color: #5A7863;")
         gst_details_layout.addWidget(self.sgst_label)
+
+        # NEW IGST LABEL
+        self.igst_label = QLabel("IGST @ 5%: ₹0.00")
+        self.igst_label.setFont(QFont("Arial", 11))
+        self.igst_label.setStyleSheet("color: #5A7863;")
+        self.igst_label.setVisible(False)
+        gst_details_layout.addWidget(self.igst_label)
         
         self.total_tax_label = QLabel("Total Tax: ₹0.00")
         self.total_tax_label.setFont(QFont("Arial", 11, QFont.Bold))
@@ -699,11 +735,30 @@ class BillingPage(QWidget):
         """Handle GST checkbox toggle"""
         is_gst = self.gst_bill_checkbox.isChecked()
         
-        # Show/hide GSTIN field
+        # Show/hide GSTIN field and state label
         self.gstin_label.setVisible(is_gst)
         self.customer_gstin.setVisible(is_gst)
+        self.gstin_state_label.setVisible(is_gst and bool(self.customer_gstin.text().strip()))
         
         # Recalculate totals
+        self.refresh_cart()
+    
+    def on_gstin_changed(self, text: str):
+        """Update GSTIN state label when GSTIN changes"""
+        gstin = text.strip()
+        state_name = get_state_from_gstin(gstin)
+        
+        if not gstin:
+            text_lbl = "State from GSTIN: -"
+        elif state_name:
+            text_lbl = f"State from GSTIN: {state_name}"
+        else:
+            text_lbl = "State from GSTIN: Invalid / Unknown"
+        
+        self.gstin_state_label.setText(text_lbl)
+        self.gstin_state_label.setVisible(self.gst_bill_checkbox.isChecked() and bool(gstin))
+        
+        # Recalculate GST breakdown when GSTIN changes
         self.refresh_cart()
     
     def on_search_product(self):
@@ -799,8 +854,13 @@ class BillingPage(QWidget):
         self.selected_product_label.setStyleSheet("color: #5A7863; font-weight: bold;")
         
         self.mrp_label.setText(f"₹{p['mrp']:.2f}")
-        self.discount_label.setText(f"{p['discount_percent']:.0f}%")
-        self.rate_label.setText(f"₹{p['selling_price']:.2f}")
+        
+        # Set discount input value (allows manual editing)
+        self.discount_input.setValue(p['discount_percent'])
+        
+        # Calculate and display rate
+        self.update_rate_from_discount()
+        
         self.stock_label.setText(str(p['current_stock']))
         
         # Set max quantity to available stock
@@ -811,6 +871,19 @@ class BillingPage(QWidget):
         self.quantity_spin.setFocus()
         self.quantity_spin.selectAll()
     
+    def update_rate_from_discount(self):
+        """Update selling rate based on MRP and discount"""
+        if not self.current_product:
+            return
+        
+        mrp = self.current_product['mrp']
+        discount_percent = self.discount_input.value()
+        
+        # Calculate rate after discount
+        rate = mrp * (1 - discount_percent / 100)
+        
+        self.rate_label.setText(f"₹{rate:.2f}")
+    
     def add_to_cart(self):
         """Add selected product to cart"""
         if not self.current_product:
@@ -819,8 +892,17 @@ class BillingPage(QWidget):
         
         quantity = self.quantity_spin.value()
         
+        # Update product with manual discount
+        product_with_discount = self.current_product.copy()
+        product_with_discount['discount_percent'] = self.discount_input.value()
+        
+        # Recalculate selling price based on new discount
+        mrp = product_with_discount['mrp']
+        discount = product_with_discount['discount_percent']
+        product_with_discount['selling_price'] = mrp * (1 - discount / 100)
+        
         success, message = billing_manager.add_item_to_cart(
-            self.current_product, quantity
+            product_with_discount, quantity
         )
         
         if success:
@@ -831,7 +913,7 @@ class BillingPage(QWidget):
             self.selected_product_label.setText("No product selected")
             self.selected_product_label.setStyleSheet("color: #5A7863; font-style: italic;")
             self.mrp_label.setText("₹0.00")
-            self.discount_label.setText("0%")
+            self.discount_input.setValue(0)
             self.rate_label.setText("₹0.00")
             self.stock_label.setText("0")
         else:
@@ -860,14 +942,42 @@ class BillingPage(QWidget):
         self.subtotal_label.setText(f"Subtotal: ₹{totals['subtotal']:.2f}")
         self.discount_total_label.setText(f"Total Discount: ₹{totals['discount_amount']:.2f}")
         
-        # Show/hide GST details
-        if is_gst_bill:
+        # GST live breakdown: CGST+SGST vs IGST based on GSTIN state
+        if is_gst_bill and totals['total_tax'] > 0:
             self.gst_frame.setVisible(True)
-            self.cgst_label.setText(f"CGST @ 2.5%: ₹{totals['cgst_amount']:.2f}")
-            self.sgst_label.setText(f"SGST @ 2.5%: ₹{totals['sgst_amount']:.2f}")
+            
+            cgst = 0.0
+            sgst = 0.0
+            igst = 0.0
+            
+            company_state_code = company_settings.get('state_code', '').strip()
+            customer_gstin = self.customer_gstin.text().strip()
+            customer_state_code = customer_gstin[:2] if len(customer_gstin) >= 2 else ""
+            
+            if company_state_code and customer_state_code == company_state_code:
+                # Intra‑state → CGST + SGST
+                cgst = totals['total_tax'] / 2
+                sgst = totals['total_tax'] / 2
+                igst = 0.0
+                self.igst_label.setVisible(False)
+            else:
+                # Inter‑state → IGST
+                igst = totals['total_tax']
+                cgst = 0.0
+                sgst = 0.0
+                self.igst_label.setVisible(True)
+            
+            self.cgst_label.setText(f"CGST @ 2.5%: ₹{cgst:.2f}")
+            self.sgst_label.setText(f"SGST @ 2.5%: ₹{sgst:.2f}")
+            self.igst_label.setText(f"IGST @ 5%: ₹{igst:.2f}")
             self.total_tax_label.setText(f"Total Tax: ₹{totals['total_tax']:.2f}")
         else:
             self.gst_frame.setVisible(False)
+            self.cgst_label.setText("CGST @ 2.5%: ₹0.00")
+            self.sgst_label.setText("SGST @ 2.5%: ₹0.00")
+            self.igst_label.setText("IGST @ 5%: ₹0.00")
+            self.igst_label.setVisible(False)
+            self.total_tax_label.setText("Total Tax: ₹0.00")
         
         self.roundoff_label.setText(f"Round Off: ₹{totals['round_off']:.2f}")
         self.grand_total_label.setText(f"₹{totals['grand_total']:.2f}")
@@ -1060,38 +1170,18 @@ class BillingPage(QWidget):
         dialog.setLayout(layout)
         
         if dialog.exec_() == QDialog.Accepted and list_widget.currentRow() >= 0:
-            selected_customer = customers[list_widget.currentRow()]
-            self.fill_customer_data(selected_customer)
+            self.fill_customer_data(customers[list_widget.currentRow()])
     
     def fill_customer_data(self, customer: dict):
         """Fill customer form with data"""
-        self.customer_name.setText(customer['name'])
+        self.customer_name.setText(customer.get('name', ''))
         self.customer_phone.setText(customer.get('phone', ''))
         self.customer_address.setPlainText(customer.get('address', ''))
         self.customer_gstin.setText(customer.get('gstin', ''))
-        
-        # Show info message
-        self.show_styled_message(
-            "Customer Loaded",
-            f"Customer details loaded: {customer['name']}\n\nYou can edit the information if needed.",
-            QMessageBox.Information
-        )
-        
-        # Clear search field
-        self.customer_search.clear()
     
     def refresh_entire_app(self):
-        """Refresh all components like app restart"""
-        # Reload products in billing (this will fetch fresh data from database)
-        self.load_products()
-    
-        # Reload sales persons
-        self.load_sales_persons()
-    
-        # Emit signal to refresh other pages
+        """Emit signal to refresh other pages"""
         app_signals.inventory_updated.emit()
-    
-        logger.info("Application refreshed after bill generation")
     
     def show_styled_message(self, title: str, message: str, icon=QMessageBox.Information):
         """Show styled message box"""

@@ -6,14 +6,19 @@ from contextlib import contextmanager
 from utils.logger import logger
 from config import DATABASE_PATH
 
+
 class DatabaseManager:
     """Manages all database operations with connection pooling and error handling"""
     
     def __init__(self, db_path: str = DATABASE_PATH):
         self.db_path = db_path
-        self._ensure_database_exists()
-        
-    def _ensure_database_exists(self):
+        self.ensure_database_exists()
+        # Run migration for batch/expiry columns
+        self.add_batch_expiry_columns()
+        self.migrate_dual_banking()
+        self.migrate_add_igst_column()
+    
+    def ensure_database_exists(self):
         """Create database and tables if they don't exist"""
         try:
             # Create data directory if it doesn't exist
@@ -34,6 +39,28 @@ class DatabaseManager:
             logger.error(f"Error initializing database: {e}")
             raise
     
+    def add_batch_expiry_columns(self):
+        """Add batch_number and expiry_date columns to products table if they don't exist"""
+        try:
+            with self.get_connection() as conn:
+                # Check if columns already exist
+                cursor = conn.execute("PRAGMA table_info(products)")
+                columns = [row['name'] for row in cursor.fetchall()]
+                
+                if 'batch_number' not in columns:
+                    conn.execute("ALTER TABLE products ADD COLUMN batch_number TEXT")
+                    logger.info("Added batch_number column to products table")
+                
+                if 'expiry_date' not in columns:
+                    conn.execute("ALTER TABLE products ADD COLUMN expiry_date TEXT")
+                    logger.info("Added expiry_date column to products table")
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error adding batch/expiry columns: {e}")
+            return False
+    
     @contextmanager
     def get_connection(self):
         """Context manager for database connections with WAL mode"""
@@ -41,6 +68,7 @@ class DatabaseManager:
         conn.row_factory = sqlite3.Row  # Access columns by name
         conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging for better concurrency
         conn.execute("PRAGMA foreign_keys=ON")  # Enable foreign keys
+        
         try:
             yield conn
         except Exception as e:
@@ -50,26 +78,28 @@ class DatabaseManager:
         finally:
             conn.close()
     
-    # ============= USER OPERATIONS =============
+    # ==================== USER OPERATIONS ====================
     
     def verify_user(self, username: str, password_hash: str) -> Optional[dict]:
         """Verify user credentials"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute(
-                    "SELECT * FROM users WHERE username = ? AND password_hash = ?",
+                    "SELECT * FROM users WHERE username=? AND password_hash=?",
                     (username, password_hash)
                 )
                 user = cursor.fetchone()
                 
                 if user:
                     # Update last login
+                    user_id = user['id']
                     conn.execute(
-                        "UPDATE users SET last_login = ? WHERE id = ?",
-                        (datetime.now(), user['id'])
+                        "UPDATE users SET last_login=? WHERE id=?",
+                        (datetime.now(), user_id)
                     )
                     conn.commit()
                     return dict(user)
+                
                 return None
         except Exception as e:
             logger.error(f"Error verifying user: {e}")
@@ -79,32 +109,42 @@ class DatabaseManager:
         """Get user by ID"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                cursor = conn.execute("SELECT * FROM users WHERE id=?", (user_id,))
                 user = cursor.fetchone()
                 return dict(user) if user else None
         except Exception as e:
             logger.error(f"Error getting user: {e}")
             return None
     
-    # ============= PRODUCT OPERATIONS =============
+    # ==================== PRODUCT OPERATIONS ====================
     
     def add_product(self, product_data: dict) -> Optional[int]:
         """Add a new product"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
-                    INSERT INTO products (name, category, hsn_code, unit, mrp, 
-                                        discount_percent, selling_price, purchase_price, 
-                                        gst_rate, current_stock, min_stock_level, 
-                                        barcode, description, package_size)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO products (name, category, hsn_code, unit, mrp, discount_percent,
+                                         selling_price, purchase_price, gst_rate, current_stock,
+                                         min_stock_level, barcode, description, package_size,
+                                         batch_number, expiry_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    product_data['name'], product_data['category'], product_data['hsn_code'],
-                    product_data['unit'], product_data['mrp'], product_data['discount_percent'],
-                    product_data['selling_price'], product_data.get('purchase_price', 0),
-                    product_data.get('gst_rate', 12.0), product_data.get('current_stock', 0),
-                    product_data.get('min_stock_level', 10), product_data.get('barcode'),
-                    product_data.get('description'), product_data.get('package_size')
+                    product_data['name'],
+                    product_data['category'],
+                    product_data['hsn_code'],
+                    product_data['unit'],
+                    product_data['mrp'],
+                    product_data['discount_percent'],
+                    product_data['selling_price'],
+                    product_data.get('purchase_price', 0),
+                    product_data.get('gst_rate', 12.0),
+                    product_data.get('current_stock', 0),
+                    product_data.get('min_stock_level', 10),
+                    product_data.get('barcode', ''),
+                    product_data.get('description', ''),
+                    product_data.get('package_size', ''),
+                    product_data.get('batch_number', ''),
+                    product_data.get('expiry_date', '')
                 ))
                 conn.commit()
                 logger.info(f"Product added: {product_data['name']}")
@@ -122,18 +162,29 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 conn.execute("""
                     UPDATE products 
-                    SET name=?, category=?, hsn_code=?, unit=?, mrp=?, 
-                        discount_percent=?, selling_price=?, purchase_price=?,
-                        gst_rate=?, min_stock_level=?, barcode=?, 
-                        description=?, package_size=?, updated_at=?
+                    SET name=?, category=?, hsn_code=?, unit=?, mrp=?,
+                        discount_percent=?, selling_price=?, purchase_price=?, gst_rate=?,
+                        min_stock_level=?, barcode=?, description=?, package_size=?,
+                        batch_number=?, expiry_date=?, updated_at=?
                     WHERE id=?
                 """, (
-                    product_data['name'], product_data['category'], product_data['hsn_code'],
-                    product_data['unit'], product_data['mrp'], product_data['discount_percent'],
-                    product_data['selling_price'], product_data.get('purchase_price', 0),
-                    product_data.get('gst_rate', 12.0), product_data.get('min_stock_level', 10),
-                    product_data.get('barcode'), product_data.get('description'),
-                    product_data.get('package_size'), datetime.now(), product_id
+                    product_data['name'],
+                    product_data['category'],
+                    product_data['hsn_code'],
+                    product_data['unit'],
+                    product_data['mrp'],
+                    product_data['discount_percent'],
+                    product_data['selling_price'],
+                    product_data.get('purchase_price', 0),
+                    product_data.get('gst_rate', 12.0),
+                    product_data.get('min_stock_level', 10),
+                    product_data.get('barcode', ''),
+                    product_data.get('description', ''),
+                    product_data.get('package_size', ''),
+                    product_data.get('batch_number', ''),
+                    product_data.get('expiry_date', ''),
+                    datetime.now(),
+                    product_id
                 ))
                 conn.commit()
                 logger.info(f"Product updated: ID {product_id}")
@@ -146,7 +197,7 @@ class DatabaseManager:
         """Get product by ID"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+                cursor = conn.execute("SELECT * FROM products WHERE id=?", (product_id,))
                 product = cursor.fetchone()
                 return dict(product) if product else None
         except Exception as e:
@@ -162,7 +213,7 @@ class DatabaseManager:
                     WHERE name LIKE ? OR barcode LIKE ?
                     ORDER BY name
                     LIMIT 50
-                """, (f"%{search_term}%", f"%{search_term}%"))
+                """, (f'%{search_term}%', f'%{search_term}%'))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error searching products: {e}")
@@ -174,7 +225,7 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 if category:
                     cursor = conn.execute(
-                        "SELECT * FROM products WHERE category = ? ORDER BY name",
+                        "SELECT * FROM products WHERE category=? ORDER BY name",
                         (category,)
                     )
                 else:
@@ -188,7 +239,7 @@ class DatabaseManager:
         """Delete a product"""
         try:
             with self.get_connection() as conn:
-                conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
+                conn.execute("DELETE FROM products WHERE id=?", (product_id,))
                 conn.commit()
                 logger.info(f"Product deleted: ID {product_id}")
                 return True
@@ -197,14 +248,14 @@ class DatabaseManager:
             return False
     
     def update_product_stock(self, product_id: int, new_stock: int, 
-                           change_type: str = "ADJUSTMENT", 
+                           change_type: str = 'ADJUSTMENT',
                            reference_id: Optional[int] = None,
                            notes: Optional[str] = None) -> bool:
         """Update product stock and log history"""
         try:
             with self.get_connection() as conn:
                 # Get current stock
-                cursor = conn.execute("SELECT current_stock FROM products WHERE id = ?", (product_id,))
+                cursor = conn.execute("SELECT current_stock FROM products WHERE id=?", (product_id,))
                 result = cursor.fetchone()
                 if not result:
                     return False
@@ -213,10 +264,11 @@ class DatabaseManager:
                 quantity_change = new_stock - old_stock
                 
                 # Update stock
-                conn.execute(
-                    "UPDATE products SET current_stock = ?, updated_at = ? WHERE id = ?",
-                    (new_stock, datetime.now(), product_id)
-                )
+                conn.execute("""
+                    UPDATE products 
+                    SET current_stock=?, updated_at=?
+                    WHERE id=?
+                """, (new_stock, datetime.now(), product_id))
                 
                 # Log history
                 conn.execute("""
@@ -248,9 +300,7 @@ class DatabaseManager:
             logger.error(f"Error getting low stock products: {e}")
             return []
     
-    # ============= CUSTOMER OPERATIONS =============
-    
-        # ============= CUSTOMER OPERATIONS =============
+    # ==================== CUSTOMER OPERATIONS ====================
     
     def search_customers(self, search_text: str) -> List[dict]:
         """Search customers by name or phone"""
@@ -261,7 +311,7 @@ class DatabaseManager:
                     WHERE name LIKE ? OR phone LIKE ?
                     ORDER BY name
                     LIMIT 20
-                """, (f"%{search_text}%", f"%{search_text}%"))
+                """, (f'%{search_text}%', f'%{search_text}%'))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error searching customers: {e}")
@@ -271,10 +321,7 @@ class DatabaseManager:
         """Get customer by phone number"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT * FROM customers WHERE phone = ?",
-                    (phone,)
-                )
+                cursor = conn.execute("SELECT * FROM customers WHERE phone=?", (phone,))
                 row = cursor.fetchone()
                 return dict(row) if row else None
         except Exception as e:
@@ -282,10 +329,7 @@ class DatabaseManager:
             return None
     
     def add_or_update_customer(self, customer_data: dict) -> Tuple[bool, str, Optional[int]]:
-        """
-        Add new customer or update existing one
-        Returns: (success, message, customer_id)
-        """
+        """Add new customer or update existing one. Returns (success, message, customer_id)"""
         try:
             phone = customer_data.get('phone', '').strip()
             
@@ -319,8 +363,7 @@ class DatabaseManager:
                 else:
                     # Add new customer
                     cursor = conn.execute("""
-                        INSERT INTO customers 
-                        (name, phone, email, address, city, state, pin_code, gstin)
+                        INSERT INTO customers (name, phone, email, address, city, state, pin_code, gstin)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         customer_data['name'],
@@ -335,7 +378,6 @@ class DatabaseManager:
                     conn.commit()
                     logger.info(f"Customer added: {customer_data['name']}")
                     return True, "Customer added", cursor.lastrowid
-                    
         except Exception as e:
             logger.error(f"Error adding/updating customer: {e}")
             return False, str(e), None
@@ -346,14 +388,14 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT * FROM bills 
-                    WHERE customer_id = ?
+                    WHERE customer_id=?
                     ORDER BY created_at DESC
                 """, (customer_id,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error getting customer bills: {e}")
             return []
-
+    
     def add_customer(self, customer_data: dict) -> Optional[int]:
         """Add a new customer"""
         try:
@@ -362,10 +404,14 @@ class DatabaseManager:
                     INSERT INTO customers (name, phone, email, address, city, state, pin_code, gstin)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    customer_data['name'], customer_data.get('phone'),
-                    customer_data.get('email'), customer_data.get('address'),
-                    customer_data.get('city'), customer_data.get('state'),
-                    customer_data.get('pin_code'), customer_data.get('gstin')
+                    customer_data['name'],
+                    customer_data.get('phone', ''),
+                    customer_data.get('email', ''),
+                    customer_data.get('address', ''),
+                    customer_data.get('city', ''),
+                    customer_data.get('state', ''),
+                    customer_data.get('pin_code', ''),
+                    customer_data.get('gstin', '')
                 ))
                 conn.commit()
                 logger.info(f"Customer added: {customer_data['name']}")
@@ -383,7 +429,7 @@ class DatabaseManager:
                     WHERE name LIKE ? OR phone LIKE ?
                     ORDER BY name
                     LIMIT 50
-                """, (f"%{search_term}%", f"%{search_term}%"))
+                """, (f'%{search_term}%', f'%{search_term}%'))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error searching customers: {e}")
@@ -393,17 +439,17 @@ class DatabaseManager:
         """Get customer by ID"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,))
+                cursor = conn.execute("SELECT * FROM customers WHERE id=?", (customer_id,))
                 customer = cursor.fetchone()
                 return dict(customer) if customer else None
         except Exception as e:
             logger.error(f"Error getting customer: {e}")
             return None
-
-    # ============= BILL OPERATIONS =============
+    
+    # ==================== BILL OPERATIONS ====================
     
     def generate_invoice_number(self) -> str:
-        """Generate next invoice number in format: NH/52/25-26"""
+        """Generate next invoice number in format NH/5/25-26"""
         try:
             with self.get_connection() as conn:
                 # Get current financial year
@@ -422,12 +468,12 @@ class DatabaseManager:
                     SELECT invoice_number FROM bills 
                     WHERE invoice_number LIKE ?
                     ORDER BY id DESC LIMIT 1
-                """, (f"NH/%/{fy_suffix}",))
+                """, (f'NH/%/{fy_suffix}',))
                 
                 last_invoice = cursor.fetchone()
                 
                 if last_invoice:
-                    # Extract number from NH/52/25-26
+                    # Extract number from NH/5/25-26
                     parts = last_invoice['invoice_number'].split('/')
                     last_num = int(parts[1])
                     next_num = last_num + 1
@@ -437,28 +483,40 @@ class DatabaseManager:
                 invoice_number = f"NH/{next_num}/{fy_suffix}"
                 logger.info(f"Generated invoice number: {invoice_number}")
                 return invoice_number
-                
         except Exception as e:
             logger.error(f"Error generating invoice number: {e}")
             # Fallback to timestamp-based number
             return f"NH/{int(datetime.now().timestamp())}/00-00"
     
     def create_bill(self, bill_data: dict, items: List[dict]) -> Tuple[bool, str, Optional[int]]:
-        """
-        Create a new bill with items
-        Returns: (success, message, bill_id)
-        """
+        """Create a new bill with items. Returns (success, message, bill_id)"""
         try:
             with self.get_connection() as conn:
                 # Insert bill
                 cursor = conn.execute("""
                     INSERT INTO bills (
-                        invoice_number, customer_id, customer_name, customer_phone,
-                        customer_address, customer_city, customer_pin_code, customer_gstin,
-                        sales_person_id, is_gst_bill, subtotal, discount_amount, 
-                        taxable_amount, cgst_amount, sgst_amount, total_tax,
-                        round_off, grand_total, created_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        invoice_number,
+                        customer_id,
+                        customer_name,
+                        customer_phone,
+                        customer_address,
+                        customer_city,
+                        customer_pin_code,
+                        customer_gstin,
+                        sales_person_id,
+                        is_gst_bill,
+                        subtotal,
+                        discount_amount,
+                        taxable_amount,
+                        cgst_amount,
+                        sgst_amount,
+                        igst_amount,
+                        total_tax,
+                        round_off,
+                        grand_total,
+                        created_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     bill_data['invoice_number'],
                     bill_data.get('customer_id'),
@@ -475,10 +533,11 @@ class DatabaseManager:
                     bill_data.get('taxable_amount', 0.0),
                     bill_data.get('cgst_amount', 0.0),
                     bill_data.get('sgst_amount', 0.0),
+                    bill_data.get('igst_amount', 0.0),
                     bill_data.get('total_tax', 0.0),
                     bill_data.get('round_off', 0.0),
                     bill_data['grand_total'],
-                    bill_data.get('created_by')
+                    bill_data['created_by']
                 ))
                 
                 bill_id = cursor.lastrowid
@@ -487,9 +546,20 @@ class DatabaseManager:
                 for item in items:
                     conn.execute("""
                         INSERT INTO bill_items (
-                            bill_id, product_id, product_name, hsn_code, batch_number,
-                            expiry_date, quantity, unit, mrp, discount_percent, rate, amount
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            bill_id,
+                            product_id,
+                            product_name,
+                            hsn_code,
+                            batch_number,
+                            expiry_date,
+                            quantity,
+                            unit,
+                            mrp,
+                            discount_percent,
+                            rate,
+                            amount
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         bill_id,
                         item['product_id'],
@@ -508,73 +578,83 @@ class DatabaseManager:
                     # Update product stock
                     conn.execute("""
                         UPDATE products 
-                        SET current_stock = current_stock - ?,
-                            updated_at = ?
-                        WHERE id = ?
+                        SET current_stock = current_stock - ?, updated_at=?
+                        WHERE id=?
                     """, (item['quantity'], datetime.now(), item['product_id']))
                     
                     # Record stock history
                     conn.execute("""
                         INSERT INTO stock_history (
-                            product_id, change_type, quantity_before, quantity_after,
-                            quantity_changed, bill_id, notes, created_by
+                            product_id,
+                            change_type,
+                            quantity_before,
+                            quantity_after,
+                            quantity_changed,
+                            bill_id,
+                            notes,
+                            created_by
                         )
-                        SELECT 
-                            ?, 'SALE', current_stock + ?, current_stock,
-                            ?, ?, 'Stock reduced due to sale', ?
-                        FROM products WHERE id = ?
+                        SELECT
+                            ?,
+                            'SALE',
+                            current_stock + ?,
+                            current_stock,
+                            ?,
+                            ?,
+                            'Stock reduced due to sale',
+                            ?
+                        FROM products
+                        WHERE id=?
                     """, (
                         item['product_id'],
                         item['quantity'],
                         -item['quantity'],
                         bill_id,
-                        bill_data.get('created_by'),
+                        bill_data['created_by'],
                         item['product_id']
                     ))
                 
                 conn.commit()
                 logger.info(f"Bill created: {bill_data['invoice_number']}")
                 return True, "Bill created successfully", bill_id
-                
         except Exception as e:
             logger.error(f"Error creating bill: {e}")
             return False, str(e), None
 
+    
     def get_last_invoice_number(self, pattern: str) -> Optional[str]:
-        """
-        Get last invoice number matching pattern
-        Pattern example: "NH/%/25-26"
-        """
+        """Get last invoice number matching pattern. Pattern example: 'NH/%/25-26'"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT invoice_number FROM bills WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1",
-                    (pattern,)
-                )
+                cursor = conn.execute("""
+                    SELECT invoice_number FROM bills 
+                    WHERE invoice_number LIKE ?
+                    ORDER BY id DESC LIMIT 1
+                """, (pattern,))
                 row = cursor.fetchone()
                 return row['invoice_number'] if row else None
         except Exception as e:
             logger.error(f"Error getting last invoice number: {e}")
             return None
-
+    
     def get_bill_by_id(self, bill_id: int) -> Optional[dict]:
         """Get bill by ID with items"""
         try:
             with self.get_connection() as conn:
                 # Get bill
-                cursor = conn.execute("SELECT * FROM bills WHERE id = ?", (bill_id,))
+                cursor = conn.execute("SELECT * FROM bills WHERE id=?", (bill_id,))
                 bill = cursor.fetchone()
-                
                 if not bill:
                     return None
                 
                 bill_dict = dict(bill)
                 
                 # Get bill items
-                cursor = conn.execute(
-                    "SELECT * FROM bill_items WHERE bill_id = ? ORDER BY id",
-                    (bill_id,)
-                )
+                cursor = conn.execute("""
+                    SELECT * FROM bill_items 
+                    WHERE bill_id=?
+                    ORDER BY id
+                """, (bill_id,))
                 bill_dict['items'] = [dict(row) for row in cursor.fetchall()]
                 
                 return bill_dict
@@ -586,22 +666,23 @@ class DatabaseManager:
         """Get bill by invoice number with items"""
         try:
             with self.get_connection() as conn:
+                # Get bill
                 cursor = conn.execute(
-                    "SELECT * FROM bills WHERE invoice_number = ?",
+                    "SELECT * FROM bills WHERE invoice_number=?",
                     (invoice_number,)
                 )
                 bill = cursor.fetchone()
-                
                 if not bill:
                     return None
                 
                 bill_dict = dict(bill)
                 
                 # Get bill items
-                cursor = conn.execute(
-                    "SELECT * FROM bill_items WHERE bill_id = ? ORDER BY id",
-                    (bill_dict['id'],)
-                )
+                cursor = conn.execute("""
+                    SELECT * FROM bill_items 
+                    WHERE bill_id=?
+                    ORDER BY id
+                """, (bill_dict['id'],))
                 bill_dict['items'] = [dict(row) for row in cursor.fetchall()]
                 
                 return bill_dict
@@ -609,7 +690,7 @@ class DatabaseManager:
             logger.error(f"Error getting bill by invoice: {e}")
             return None
     
-    def search_bills(self, search_term: str = "", start_date: Optional[str] = None, 
+    def search_bills(self, search_term: str = '', start_date: Optional[str] = None,
                     end_date: Optional[str] = None, limit: int = 100) -> List[dict]:
         """Search bills by invoice number or customer name"""
         try:
@@ -619,7 +700,7 @@ class DatabaseManager:
                 
                 if search_term:
                     query += " AND (invoice_number LIKE ? OR customer_name LIKE ?)"
-                    params.extend([f"%{search_term}%", f"%{search_term}%"])
+                    params.extend([f'%{search_term}%', f'%{search_term}%'])
                 
                 if start_date:
                     query += " AND DATE(created_at) >= ?"
@@ -652,19 +733,20 @@ class DatabaseManager:
             logger.error(f"Error getting recent bills: {e}")
             return []
     
-    # ============= PRODUCT BATCH OPERATIONS =============
+    # ==================== PRODUCT BATCH OPERATIONS ====================
     
     def add_product_batch(self, batch_data: dict) -> Optional[int]:
         """Add a new product batch"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
-                    INSERT INTO product_batches 
-                    (product_id, batch_number, expiry_date, quantity, mrp)
+                    INSERT INTO product_batches (product_id, batch_number, expiry_date, quantity, mrp)
                     VALUES (?, ?, ?, ?, ?)
                 """, (
-                    batch_data['product_id'], batch_data['batch_number'],
-                    batch_data.get('expiry_date'), batch_data.get('quantity', 0),
+                    batch_data['product_id'],
+                    batch_data['batch_number'],
+                    batch_data.get('expiry_date'),
+                    batch_data.get('quantity', 0),
                     batch_data.get('mrp')
                 ))
                 conn.commit()
@@ -683,7 +765,7 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
                     SELECT * FROM product_batches 
-                    WHERE product_id = ? AND quantity > 0
+                    WHERE product_id=? AND quantity > 0
                     ORDER BY expiry_date ASC
                 """, (product_id,))
                 return [dict(row) for row in cursor.fetchall()]
@@ -696,11 +778,11 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute("""
-                    SELECT pb.*, p.name as product_name 
+                    SELECT pb.*, p.name as product_name
                     FROM product_batches pb
                     JOIN products p ON pb.product_id = p.id
                     WHERE pb.quantity > 0 
-                    AND pb.expiry_date <= DATE('now', '+' || ? || ' days')
+                    AND pb.expiry_date <= DATE('now', ? || ' days')
                     ORDER BY pb.expiry_date ASC
                 """, (days,))
                 return [dict(row) for row in cursor.fetchall()]
@@ -708,7 +790,7 @@ class DatabaseManager:
             logger.error(f"Error getting expiring batches: {e}")
             return []
     
-    # ============= REPORTING & ANALYTICS =============
+    # ==================== REPORTING & ANALYTICS ====================
     
     def get_sales_summary(self, start_date: str, end_date: str) -> dict:
         """Get sales summary for date range"""
@@ -725,16 +807,13 @@ class DatabaseManager:
                     FROM bills
                     WHERE DATE(created_at) BETWEEN ? AND ?
                 """, (start_date, end_date))
-                
                 result = cursor.fetchone()
                 return dict(result) if result else {}
         except Exception as e:
             logger.error(f"Error getting sales summary: {e}")
             return {}
-
     
-    def get_top_selling_products(self, limit: int = 10, 
-                                 start_date: Optional[str] = None,
+    def get_top_selling_products(self, limit: int = 10, start_date: Optional[str] = None,
                                  end_date: Optional[str] = None) -> List[dict]:
         """Get top selling products"""
         try:
@@ -774,7 +853,7 @@ class DatabaseManager:
             return []
     
     def get_payment_mode_summary(self, start_date: Optional[str] = None,
-                                end_date: Optional[str] = None) -> List[dict]:
+                                 end_date: Optional[str] = None) -> List[dict]:
         """Get payment mode wise summary"""
         try:
             with self.get_connection() as conn:
@@ -841,14 +920,14 @@ class DatabaseManager:
             logger.error(f"Error getting inventory value: {e}")
             return {}
     
-    # ============= BACKUP OPERATIONS =============
+    # ==================== BACKUP OPERATIONS ====================
     
     def backup_database(self, backup_path: str) -> bool:
         """Create database backup"""
         try:
             import shutil
             shutil.copy2(self.db_path, backup_path)
-            logger.info(f"Database backed up to: {backup_path}")
+            logger.info(f"Database backed up to {backup_path}")
             return True
         except Exception as e:
             logger.error(f"Error backing up database: {e}")
@@ -858,25 +937,24 @@ class DatabaseManager:
         """Restore database from backup"""
         try:
             import shutil
+            
             # Create backup of current database first
             current_backup = f"{self.db_path}.before_restore"
             shutil.copy2(self.db_path, current_backup)
             
             # Restore from backup
             shutil.copy2(backup_path, self.db_path)
-            logger.info(f"Database restored from: {backup_path}")
+            logger.info(f"Database restored from {backup_path}")
             return True
         except Exception as e:
             logger.error(f"Error restoring database: {e}")
             return False
     
-    # ============= UTILITY OPERATIONS =============
+    # ==================== UTILITY OPERATIONS ====================
     
     def get_database_stats(self) -> dict:
         """Get database statistics"""
         try:
-            import os
-            
             stats = {}
             
             # Database file size
@@ -889,23 +967,18 @@ class DatabaseManager:
             
             # Table counts
             with self.get_connection() as conn:
-                tables = [
-                    'products', 'customers', 'bills', 'bill_items',
-                    'stock_history', 'users', 'sales_persons'
-                ]
-                
+                tables = ['products', 'customers', 'bills', 'bill_items', 'stock_history', 
+                         'users', 'salespersons']
                 for table in tables:
                     cursor = conn.execute(f"SELECT COUNT(*) as count FROM {table}")
                     stats[table] = cursor.fetchone()['count']
             
             return stats
-            
         except Exception as e:
             logger.error(f"Error getting database stats: {e}")
             return {}
-
     
-    # ============= COMPANY SETTINGS OPERATIONS =============
+    # ==================== SALES PERSON OPERATIONS ====================
     
     def get_all_sales_persons(self, active_only: bool = True) -> List[dict]:
         """Get all sales persons"""
@@ -913,12 +986,10 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 if active_only:
                     cursor = conn.execute(
-                        "SELECT * FROM sales_persons WHERE is_active = 1 ORDER BY name"
+                        "SELECT * FROM salespersons WHERE is_active=1 ORDER BY name"
                     )
                 else:
-                    cursor = conn.execute(
-                        "SELECT * FROM sales_persons ORDER BY name"
-                    )
+                    cursor = conn.execute("SELECT * FROM salespersons ORDER BY name")
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error getting sales persons: {e}")
@@ -929,7 +1000,7 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute(
-                    "SELECT * FROM sales_persons WHERE id = ?",
+                    "SELECT * FROM salespersons WHERE id=?",
                     (sales_person_id,)
                 )
                 row = cursor.fetchone()
@@ -938,14 +1009,14 @@ class DatabaseManager:
             logger.error(f"Error getting sales person: {e}")
             return None
     
-    def add_sales_person(self, name: str, phone: str = "", email: str = "") -> Tuple[bool, str, Optional[int]]:
+    def add_sales_person(self, name: str, phone: str = '', email: str = '') -> Tuple[bool, str, Optional[int]]:
         """Add new sales person"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute(
-                    "INSERT INTO sales_persons (name, phone, email) VALUES (?, ?, ?)",
-                    (name.strip(), phone.strip(), email.strip())
-                )
+                cursor = conn.execute("""
+                    INSERT INTO salespersons (name, phone, email)
+                    VALUES (?, ?, ?)
+                """, (name.strip(), phone.strip(), email.strip()))
                 conn.commit()
                 logger.info(f"Sales person added: {name}")
                 return True, "Sales person added successfully", cursor.lastrowid
@@ -955,14 +1026,16 @@ class DatabaseManager:
             logger.error(f"Error adding sales person: {e}")
             return False, str(e), None
     
-    def update_sales_person(self, sales_person_id: int, name: str, phone: str = "", email: str = "") -> Tuple[bool, str]:
+    def update_sales_person(self, sales_person_id: int, name: str, 
+                          phone: str = '', email: str = '') -> Tuple[bool, str]:
         """Update sales person"""
         try:
             with self.get_connection() as conn:
-                conn.execute(
-                    "UPDATE sales_persons SET name=?, phone=?, email=? WHERE id=?",
-                    (name.strip(), phone.strip(), email.strip(), sales_person_id)
-                )
+                conn.execute("""
+                    UPDATE salespersons 
+                    SET name=?, phone=?, email=?
+                    WHERE id=?
+                """, (name.strip(), phone.strip(), email.strip(), sales_person_id))
                 conn.commit()
                 logger.info(f"Sales person updated: {name}")
                 return True, "Sales person updated successfully"
@@ -973,12 +1046,12 @@ class DatabaseManager:
             return False, str(e)
     
     def delete_sales_person(self, sales_person_id: int) -> Tuple[bool, str]:
-        """Delete (deactivate) sales person"""
+        """Delete/deactivate sales person"""
         try:
-            # Check if sales person has bills
             with self.get_connection() as conn:
+                # Check if sales person has bills
                 cursor = conn.execute(
-                    "SELECT COUNT(*) as count FROM bills WHERE sales_person_id = ?",
+                    "SELECT COUNT(*) as count FROM bills WHERE sales_person_id=?",
                     (sales_person_id,)
                 )
                 count = cursor.fetchone()['count']
@@ -986,7 +1059,7 @@ class DatabaseManager:
                 if count > 0:
                     # Deactivate instead of delete
                     conn.execute(
-                        "UPDATE sales_persons SET is_active = 0 WHERE id = ?",
+                        "UPDATE salespersons SET is_active=0 WHERE id=?",
                         (sales_person_id,)
                     )
                     conn.commit()
@@ -994,10 +1067,7 @@ class DatabaseManager:
                     return True, "Sales person deactivated (has existing bills)"
                 else:
                     # Safe to delete
-                    conn.execute(
-                        "DELETE FROM sales_persons WHERE id = ?",
-                        (sales_person_id,)
-                    )
+                    conn.execute("DELETE FROM salespersons WHERE id=?", (sales_person_id,))
                     conn.commit()
                     logger.info(f"Sales person deleted: ID {sales_person_id}")
                     return True, "Sales person deleted successfully"
@@ -1005,7 +1075,8 @@ class DatabaseManager:
             logger.error(f"Error deleting sales person: {e}")
             return False, str(e)
     
-    def get_sales_person_performance(self, sales_person_id: int, start_date: str, end_date: str) -> dict:
+    def get_sales_person_performance(self, sales_person_id: int, start_date: str, 
+                                    end_date: str) -> dict:
         """Get sales performance for a sales person"""
         try:
             with self.get_connection() as conn:
@@ -1014,26 +1085,25 @@ class DatabaseManager:
                         COUNT(*) as total_bills,
                         COALESCE(SUM(grand_total), 0) as total_revenue,
                         COALESCE(AVG(grand_total), 0) as avg_bill_value
-                    FROM bills 
-                    WHERE sales_person_id = ?
+                    FROM bills
+                    WHERE sales_person_id=? 
                     AND DATE(created_at) BETWEEN ? AND ?
                 """, (sales_person_id, start_date, end_date))
-                
                 result = cursor.fetchone()
                 return dict(result) if result else {
-                    'total_bills': 0,
-                    'total_revenue': 0.0,
-                    'avg_bill_value': 0.0
+                    'total_bills': 0, 'total_revenue': 0.0, 'avg_bill_value': 0.0
                 }
         except Exception as e:
             logger.error(f"Error getting sales person performance: {e}")
             return {'total_bills': 0, 'total_revenue': 0.0, 'avg_bill_value': 0.0}
-
+    
+    # ==================== COMPANY SETTINGS OPERATIONS ====================
+    
     def get_company_settings(self) -> dict:
         """Get company settings"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.execute("SELECT * FROM company_settings WHERE id = 1")
+                cursor = conn.execute("SELECT * FROM company_settings WHERE id=1")
                 settings = cursor.fetchone()
                 return dict(settings) if settings else {}
         except Exception as e:
@@ -1051,16 +1121,17 @@ class DatabaseManager:
                         phone=?, email=?, instagram=?, bank_name=?, bank_account_no=?,
                         bank_ifsc=?, gstin=?, state_name=?, state_code=?,
                         invoice_prefix=?, invoice_note=?, updated_at=?
-                    WHERE id = 1
+                    WHERE id=1
                 """, (
                     settings['company_name'], settings['company_tagline'],
                     settings['company_subtitle'], settings['company_certifications'],
                     settings['office_address'], settings['factory_address'],
                     settings['phone'], settings['email'], settings['instagram'],
                     settings['bank_name'], settings['bank_account_no'],
-                    settings['bank_ifsc'], settings['gstin'], settings['state_name'],
-                    settings['state_code'], settings['invoice_prefix'],
-                    settings['invoice_note'], datetime.now()
+                    settings['bank_ifsc'], settings['gstin'],
+                    settings['state_name'], settings['state_code'],
+                    settings['invoice_prefix'], settings['invoice_note'],
+                    datetime.now()
                 ))
                 conn.commit()
                 logger.info("Company settings updated successfully")
@@ -1068,6 +1139,69 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating company settings: {e}")
             return False
+        
+    def migrate_dual_banking(self):
+        """Migrate to support dual banking (GST and Non-GST)"""
+        try:
+            with self.get_connection() as conn:
+                # Check if columns exist
+                cursor = conn.execute("PRAGMA table_info(company_settings)")
+                columns = [row[1] for row in cursor.fetchall()]
+                
+                # Add GST banking columns if they don't exist
+                if 'gst_bank_name' not in columns:
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_bank_name TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_bank_account_no TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_bank_ifsc TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_bank_branch TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_upi_id TEXT DEFAULT ''")
+                    
+                    # Migrate existing data to GST banking
+                    conn.execute("""
+                        UPDATE company_settings 
+                        SET gst_bank_name = bank_name,
+                            gst_bank_account_no = bank_account_no,
+                            gst_bank_ifsc = bank_ifsc
+                        WHERE gst_bank_name = '' OR gst_bank_name IS NULL
+                    """)
+                    
+                    logger.info("Migrated existing banking data to GST banking")
+                
+                # Add Non-GST banking columns if they don't exist
+                if 'non_gst_bank_name' not in columns:
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_bank_name TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_bank_account_no TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_bank_ifsc TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_bank_branch TEXT DEFAULT ''")
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_upi_id TEXT DEFAULT ''")
+                    
+                    logger.info("Added Non-GST banking columns")
+                
+                conn.commit()
+                logger.info("Dual banking migration completed successfully")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error in dual banking migration: {e}")
+            return False
+
+    def migrate_add_igst_column(self) -> bool:
+        """Ensure igst_amount column exists in bills table"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("PRAGMA table_info(bills)")
+                columns = [row["name"] for row in cursor.fetchall()]
+
+                if "igst_amount" not in columns:
+                    conn.execute("ALTER TABLE bills ADD COLUMN igst_amount REAL DEFAULT 0.0")
+                    conn.commit()
+                    logger.info("Added igst_amount column to bills table")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error adding igst_amount column: {e}")
+            return False
+
 
 
 # Create global instance

@@ -2,8 +2,8 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                             QComboBox, QMessageBox, QFrame, QHeaderView,
                             QDialog, QFormLayout, QDialogButtonBox, QSpinBox,
-                            QDoubleSpinBox, QGroupBox)
-from PyQt5.QtCore import Qt
+                            QDoubleSpinBox, QGroupBox, QDateEdit)
+from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor
 from modules.inventory import inventory_manager
 from utils.constants import PRODUCT_CATEGORIES, UNITS, DEFAULT_HSN_CODE
@@ -12,7 +12,7 @@ from utils.logger import logger
 
 class InventoryPage(QWidget):
     """Inventory management page"""
-    
+
     def __init__(self):
         # Initialize the parent QWidget class
         super().__init__()
@@ -20,7 +20,7 @@ class InventoryPage(QWidget):
         self.init_ui()
         # Load inventory data from database
         self.load_inventory()
-    
+
     def init_ui(self):
         """Initialize the user interface"""
         # Create main vertical layout for the page
@@ -29,33 +29,33 @@ class InventoryPage(QWidget):
         main_layout.setSpacing(10)
         # Set light cream background color for the entire widget
         self.setStyleSheet("background-color: #EBF4DD;")
-        
+
         # Header section with title
         header_layout = QHBoxLayout()
-        
+
         # Create title label with "Inventory Management" text
         title = QLabel("Inventory Management")
         # Set font to Arial, 16pt, Bold
         title.setFont(QFont("Arial", 16, QFont.Bold))
         # Apply medium green color and remove border
         title.setStyleSheet("color: #5A7863; border: none;")
-        
+
         # Add title to header layout
         header_layout.addWidget(title)
         # Add stretch to push title to the left
         header_layout.addStretch()
-        
+
         # Add header layout to main layout
         main_layout.addLayout(header_layout)
-        
+
         # Create toolbar with action buttons
         toolbar = self.create_toolbar()
         # Add toolbar to main layout
         main_layout.addWidget(toolbar)
-        
+
         # Search and filter section
         search_layout = QHBoxLayout()
-        
+
         # Create search input field
         self.search_input = QLineEdit()
         # Set placeholder text for search field
@@ -76,7 +76,7 @@ class InventoryPage(QWidget):
                 border: 2px solid #5A7863;
             }
         """)
-        
+
         # Create category filter dropdown
         self.category_filter = QComboBox()
         # Add "All Categories" as first option
@@ -108,17 +108,17 @@ class InventoryPage(QWidget):
                 selection-color: #EBF4DD;
             }
         """)
-        
+
         # Create "Search:" label
         search_label = QLabel("Search:")
         # Apply dark text color and bold font
         search_label.setStyleSheet("color: #3B4953; font-weight: bold;")
-        
+
         # Create "Category:" label
         category_label = QLabel("Category:")
         # Apply dark text color and bold font
         category_label.setStyleSheet("color: #3B4953; font-weight: bold;")
-        
+
         # Add search label to layout
         search_layout.addWidget(search_label)
         # Add search input with stretch factor of 1
@@ -127,20 +127,20 @@ class InventoryPage(QWidget):
         search_layout.addWidget(category_label)
         # Add category dropdown to layout
         search_layout.addWidget(self.category_filter)
-        
+
         # Add search layout to main layout
         main_layout.addLayout(search_layout)
-        
+
         # Create inventory table widget
         self.inventory_table = QTableWidget()
-        # Set number of columns to 10
+        # Set number of columns to 10 (REMOVED DISCOUNT & SELLING PRICE)
         self.inventory_table.setColumnCount(10)
-        # Set column headers
+        # Set column headers (NO DISCOUNT OR SELLING PRICE)
         self.inventory_table.setHorizontalHeaderLabels([
-            "ID", "Name", "Category", "HSN", "MRP", "Disc%", 
-            "Selling Price", "Stock", "Min Stock", "Actions"
+            "ID", "Name", "Category", "HSN", "Batch No.", "Expiry", "MRP", 
+            "Stock", "Min Stock", "Actions"
         ])
-        
+
         # Make "Name" column stretch to fill available space
         self.inventory_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         # Disable editing of table cells
@@ -177,18 +177,18 @@ class InventoryPage(QWidget):
                 font-size: 11pt;
             }
         """)
-        
+
         # Add inventory table to main layout
         main_layout.addWidget(self.inventory_table)
-        
+
         # Create summary section with statistics
         summary_layout = self.create_summary()
         # Add summary to main layout
         main_layout.addWidget(summary_layout)
-        
+
         # Set the main layout for this widget
         self.setLayout(main_layout)
-    
+
     def create_toolbar(self) -> QFrame:
         """Create toolbar with action buttons"""
         # Create frame container for toolbar
@@ -202,10 +202,10 @@ class InventoryPage(QWidget):
                 border: 2px solid #90AB8B;
             }
         """)
-        
+
         # Create horizontal layout for toolbar
         layout = QHBoxLayout(toolbar)
-        
+
         # Create "Add Product" button with plus icon
         add_btn = QPushButton("➕ Add Product")
         # Apply medium green background with cream text
@@ -224,7 +224,7 @@ class InventoryPage(QWidget):
         """)
         # Connect click event to add_product method
         add_btn.clicked.connect(self.add_product)
-        
+
         # Create "Refresh" button with refresh icon
         refresh_btn = QPushButton("🔄 Refresh")
         # Apply sage green background with cream text
@@ -243,7 +243,7 @@ class InventoryPage(QWidget):
         """)
         # Connect click event to load_inventory method
         refresh_btn.clicked.connect(self.load_inventory)
-        
+
         # Create "Low Stock" button with warning icon
         low_stock_btn = QPushButton("⚠️ Low Stock")
         # Apply dark blue-grey background with cream text
@@ -262,7 +262,7 @@ class InventoryPage(QWidget):
         """)
         # Connect click event to show_low_stock method
         low_stock_btn.clicked.connect(self.show_low_stock)
-        
+
         # Add "Add Product" button to layout
         layout.addWidget(add_btn)
         # Add "Refresh" button to layout
@@ -271,10 +271,10 @@ class InventoryPage(QWidget):
         layout.addWidget(low_stock_btn)
         # Add stretch to push buttons to the left
         layout.addStretch()
-        
+
         # Return the configured toolbar frame
         return toolbar
-    
+
     def create_summary(self) -> QFrame:
         """Create summary section"""
         # Create frame container for summary
@@ -288,31 +288,31 @@ class InventoryPage(QWidget):
                 border: 2px solid #90AB8B;
             }
         """)
-        
+
         # Create horizontal layout for summary items
         layout = QHBoxLayout(summary)
-        
+
         # Create label for total products count
         self.total_products_label = QLabel("Total Products: 0")
         # Set font to Arial, 11pt, Bold
         self.total_products_label.setFont(QFont("Arial", 11, QFont.Bold))
         # Apply dark text color
         self.total_products_label.setStyleSheet("color: #EBF4DD;")
-        
+
         # Create label for total stock quantity
         self.total_stock_label = QLabel("Total Stock: 0")
         # Set font to Arial, 11pt, Bold
         self.total_stock_label.setFont(QFont("Arial", 11, QFont.Bold))
         # Apply dark text color
         self.total_stock_label.setStyleSheet("color: #EBF4DD;")
-        
+
         # Create label for inventory value in rupees
         self.inventory_value_label = QLabel("Inventory Value: ₹0.00")
         # Set font to Arial, 11pt, Bold
         self.inventory_value_label.setFont(QFont("Arial", 11, QFont.Bold))
         # Apply medium green color to highlight value
         self.inventory_value_label.setStyleSheet("color: #EBF4DD; font-weight: bold;")
-        
+
         # Add total products label to layout
         layout.addWidget(self.total_products_label)
         # Add total stock label to layout
@@ -321,10 +321,10 @@ class InventoryPage(QWidget):
         layout.addWidget(self.inventory_value_label)
         # Add stretch to push labels to the left
         layout.addStretch()
-        
+
         # Return the configured summary frame
         return summary
-    
+
     def load_inventory(self):
         """Load inventory data"""
         # Fetch all products from inventory manager
@@ -333,12 +333,12 @@ class InventoryPage(QWidget):
         self.display_products(products)
         # Update summary statistics
         self.update_summary()
-    
+
     def display_products(self, products):
         """Display products in table"""
         # Set table row count to match number of products
         self.inventory_table.setRowCount(len(products))
-        
+
         # Loop through each product with index
         for row, product in enumerate(products):
             # Set ID in column 0 (hidden column)
@@ -349,13 +349,13 @@ class InventoryPage(QWidget):
             self.inventory_table.setItem(row, 2, QTableWidgetItem(product['category']))
             # Set HSN code in column 3
             self.inventory_table.setItem(row, 3, QTableWidgetItem(product['hsn_code']))
-            # Set MRP with rupee symbol and 2 decimal places in column 4
-            self.inventory_table.setItem(row, 4, QTableWidgetItem(f"₹{product['mrp']:.2f}"))
-            # Set discount percentage with no decimals in column 5
-            self.inventory_table.setItem(row, 5, QTableWidgetItem(f"{product['discount_percent']:.0f}%"))
-            # Set selling price with rupee symbol and 2 decimals in column 6
-            self.inventory_table.setItem(row, 6, QTableWidgetItem(f"₹{product['selling_price']:.2f}"))
-            
+            # Set Batch Number in column 4
+            self.inventory_table.setItem(row, 4, QTableWidgetItem(product.get('batch_number', '')))
+            # Set Expiry Date in column 5
+            self.inventory_table.setItem(row, 5, QTableWidgetItem(product.get('expiry_date', '')))
+            # Set MRP with rupee symbol and 2 decimal places in column 6
+            self.inventory_table.setItem(row, 6, QTableWidgetItem(f"₹{product['mrp']:.2f}"))
+
             # Create stock item for column 7
             stock_item = QTableWidgetItem(str(product['current_stock']))
             # Check if stock is at or below minimum level
@@ -366,10 +366,10 @@ class InventoryPage(QWidget):
                 stock_item.setForeground(QColor(200, 0, 0))
             # Set stock item in column 7
             self.inventory_table.setItem(row, 7, stock_item)
-            
+
             # Set minimum stock level in column 8
             self.inventory_table.setItem(row, 8, QTableWidgetItem(str(product['min_stock_level'])))
-            
+
             # Create widget container for action buttons
             actions_widget = QWidget()
             # Create horizontal layout for action buttons
@@ -378,7 +378,7 @@ class InventoryPage(QWidget):
             actions_layout.setContentsMargins(2, 2, 2, 2)
             # Set spacing between buttons to 2 pixels
             actions_layout.setSpacing(2)
-            
+
             # Create edit button with pencil icon
             edit_btn = QPushButton("✏️")
             # Set maximum width to 30 pixels for compact size
@@ -396,7 +396,7 @@ class InventoryPage(QWidget):
             """)
             # Connect click event to edit_product method with product data
             edit_btn.clicked.connect(lambda checked, p=product: self.edit_product(p))
-            
+
             # Create stock adjustment button with package icon
             stock_btn = QPushButton("📦")
             # Set maximum width to 30 pixels
@@ -414,7 +414,7 @@ class InventoryPage(QWidget):
             """)
             # Connect click event to adjust_stock method with product data
             stock_btn.clicked.connect(lambda checked, p=product: self.adjust_stock(p))
-            
+
             # Create delete button with trash icon
             delete_btn = QPushButton("🗑️")
             # Set maximum width to 30 pixels
@@ -432,30 +432,30 @@ class InventoryPage(QWidget):
             """)
             # Connect click event to delete_product method with product data
             delete_btn.clicked.connect(lambda checked, p=product: self.delete_product(p))
-            
+
             # Add edit button to actions layout
             actions_layout.addWidget(edit_btn)
             # Add stock button to actions layout
             actions_layout.addWidget(stock_btn)
             # Add delete button to actions layout
             actions_layout.addWidget(delete_btn)
-            
+
             # Set actions widget in column 9
             self.inventory_table.setCellWidget(row, 9, actions_widget)
-    
+
     def update_summary(self):
         """Update summary labels"""
         try:
             # Fetch inventory value statistics from inventory manager
             inventory_value = inventory_manager.get_inventory_value()
-            
+
             # Safely get total products with default 0 if None
             total_products = inventory_value.get('total_products') if inventory_value.get('total_products') is not None else 0
             # Safely get total stock with default 0 if None
             total_stock = inventory_value.get('total_stock') if inventory_value.get('total_stock') is not None else 0
             # Safely get selling value with default 0.0 if None
             selling_value = inventory_value.get('selling_value') if inventory_value.get('selling_value') is not None else 0.0
-            
+
             # Update total products label with fetched value
             self.total_products_label.setText(f"Total Products: {total_products}")
             # Update total stock label with fetched value
@@ -471,29 +471,28 @@ class InventoryPage(QWidget):
             self.total_stock_label.setText("Total Stock: 0")
             # Set inventory value to 0.00 on error
             self.inventory_value_label.setText("Inventory Value: ₹0.00")
-            
+
     def search_products(self):
         """Search products"""
-        # Get search text from input and remove #EBF4DDspace
+        # Get search text from input and remove whitespace
         search_text = self.search_input.text().strip()
-        
+
         # Check if search text is empty
         if not search_text:
             # Load all inventory if search is empty
             self.load_inventory()
             # Exit function
             return
-        
+
         # Search products using inventory manager
         products = inventory_manager.search_products(search_text)
         # Display filtered products in table
         self.display_products(products)
-    
+
     def filter_by_category(self):
         """Filter products by category"""
         # Get selected category from dropdown
         category = self.category_filter.currentText()
-        
         # Check if "All Categories" is selected
         if category == "All Categories":
             # Get all products without category filter
@@ -501,22 +500,22 @@ class InventoryPage(QWidget):
         else:
             # Get products filtered by selected category
             products = inventory_manager.get_all_products(category)
-        
+
         # Display filtered products in table
         self.display_products(products)
-    
+
     def add_product(self):
         """Open add product dialog"""
         # Create product dialog without existing product (add mode)
         dialog = ProductDialog(self)
-        
+
         # Check if user clicked Save button
         if dialog.exec_() == QDialog.Accepted:
             # Get product data from dialog form
             product_data = dialog.get_product_data()
             # Add product using inventory manager
             success, message, product_id = inventory_manager.add_product(product_data)
-            
+
             # Check if product was added successfully
             if success:
                 # Show success message to user
@@ -526,19 +525,19 @@ class InventoryPage(QWidget):
             else:
                 # Show error message to user
                 self.show_styled_message("Error", message, QMessageBox.Warning)
-    
+
     def edit_product(self, product):
         """Open edit product dialog"""
         # Create product dialog with existing product data (edit mode)
         dialog = ProductDialog(self, product)
-        
+
         # Check if user clicked Save button
         if dialog.exec_() == QDialog.Accepted:
             # Get updated product data from dialog form
             product_data = dialog.get_product_data()
             # Update product using inventory manager with product ID
             success, message = inventory_manager.update_product(product['id'], product_data)
-            
+
             # Check if product was updated successfully
             if success:
                 # Show success message to user
@@ -548,12 +547,12 @@ class InventoryPage(QWidget):
             else:
                 # Show error message to user
                 self.show_styled_message("Error", message, QMessageBox.Warning)
-    
+
     def adjust_stock(self, product):
         """Open stock adjustment dialog"""
         # Create stock adjustment dialog with product data
         dialog = StockAdjustmentDialog(self, product)
-        
+
         # Check if user clicked Save button
         if dialog.exec_() == QDialog.Accepted:
             # Get new stock quantity and notes from dialog
@@ -562,7 +561,7 @@ class InventoryPage(QWidget):
             success, message = inventory_manager.update_stock(
                 product['id'], new_stock, "ADJUSTMENT", notes
             )
-            
+
             # Check if stock was updated successfully
             if success:
                 # Show success message to user
@@ -572,7 +571,7 @@ class InventoryPage(QWidget):
             else:
                 # Show error message to user
                 self.show_styled_message("Error", message, QMessageBox.Warning)
-    
+
     def delete_product(self, product):
         """Delete product"""
         # Create confirmation dialog
@@ -585,15 +584,15 @@ class InventoryPage(QWidget):
         msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         # Apply styled message box styling
         msg_box.setStyleSheet(self.get_message_box_style())
-        
+
         # Show dialog and get user response
         reply = msg_box.exec_()
-        
+
         # Check if user clicked Yes
         if reply == QMessageBox.Yes:
             # Delete product using inventory manager with product ID
             success, message = inventory_manager.delete_product(product['id'])
-            
+
             # Check if product was deleted successfully
             if success:
                 # Show success message to user
@@ -603,26 +602,26 @@ class InventoryPage(QWidget):
             else:
                 # Show error message to user
                 self.show_styled_message("Error", message, QMessageBox.Warning)
-    
+
     def show_low_stock(self):
         """Show low stock products"""
         # Get list of low stock products from inventory manager
         low_stock = inventory_manager.get_low_stock_products()
-        
+
         # Check if no low stock products found
         if not low_stock:
             # Show information message
             self.show_styled_message("Low Stock", "No products with low stock", QMessageBox.Information)
             # Exit function
             return
-        
+
         # Display low stock products in table
         self.display_products(low_stock)
         # Clear search input field
         self.search_input.clear()
         # Reset category filter to "All Categories"
         self.category_filter.setCurrentIndex(0)
-    
+
     def show_styled_message(self, title: str, message: str, icon=QMessageBox.Information):
         """Show styled message box"""
         # Create message box with this widget as parent
@@ -637,7 +636,7 @@ class InventoryPage(QWidget):
         msg_box.setStyleSheet(self.get_message_box_style())
         # Show message box and wait for user response
         msg_box.exec_()
-    
+
     def get_message_box_style(self) -> str:
         """Get consistent message box styling"""
         # Return CSS stylesheet for message boxes
@@ -665,7 +664,7 @@ class InventoryPage(QWidget):
 
 class ProductDialog(QDialog):
     """Dialog for adding/editing products"""
-    
+
     def __init__(self, parent=None, product=None):
         # Initialize parent QDialog class
         super().__init__(parent)
@@ -675,7 +674,7 @@ class ProductDialog(QDialog):
         self.is_edit = product is not None
         # Initialize dialog user interface
         self.init_ui()
-    
+
     def init_ui(self):
         """Initialize dialog UI"""
         # Set window title based on mode (Edit or Add)
@@ -692,12 +691,12 @@ class ProductDialog(QDialog):
                 font-weight: bold;
             }
         """)
-        
+
         # Create form layout for input fields
         layout = QFormLayout()
         # Set spacing between form rows
         layout.setSpacing(10)
-        
+
         # Product name input field
         self.name_input = QLineEdit()
         # If editing, populate with existing product name
@@ -707,7 +706,7 @@ class ProductDialog(QDialog):
         self.name_input.setStyleSheet(self.get_input_style())
         # Add product name field to form with label
         layout.addRow("Product Name: *", self.name_input)
-        
+
         # Category dropdown
         self.category_combo = QComboBox()
         # Add all product categories to dropdown
@@ -723,7 +722,7 @@ class ProductDialog(QDialog):
         self.category_combo.setStyleSheet(self.get_combo_style())
         # Add category field to form with label
         layout.addRow("Category: *", self.category_combo)
-        
+
         # HSN Code input field
         self.hsn_input = QLineEdit()
         # If editing, use existing HSN, otherwise use default
@@ -732,7 +731,42 @@ class ProductDialog(QDialog):
         self.hsn_input.setStyleSheet(self.get_input_style())
         # Add HSN code field to form with label
         layout.addRow("HSN Code:", self.hsn_input)
-        
+
+        # Batch Number input field (NOW MANDATORY)
+        self.batch_input = QLineEdit()
+        # If editing and batch number exists, populate field
+        if self.product and self.product.get('batch_number'):
+            self.batch_input.setText(self.product['batch_number'])
+        # Set placeholder text
+        self.batch_input.setPlaceholderText("Enter batch number")
+        # Apply input field styling
+        self.batch_input.setStyleSheet(self.get_input_style())
+        # Add batch number field to form with label (ASTERISK FOR REQUIRED)
+        layout.addRow("Batch Number: *", self.batch_input)
+
+        # Expiry Date picker (NOW MANDATORY)
+        self.expiry_input = QDateEdit()
+        # Enable calendar popup
+        self.expiry_input.setCalendarPopup(True)
+        # Set date display format
+        self.expiry_input.setDisplayFormat("dd-MM-yyyy")
+        # If editing and expiry date exists, populate field
+        if self.product and self.product.get('expiry_date'):
+            try:
+                # Parse date from database (YYYY-MM-DD format)
+                date_parts = self.product['expiry_date'].split('-')
+                self.expiry_input.setDate(QDate(int(date_parts[0]), int(date_parts[1]), int(date_parts[2])))
+            except:
+                # If parsing fails, set to 2 years from now
+                self.expiry_input.setDate(QDate.currentDate().addYears(2))
+        else:
+            # Set default to 2 years from now
+            self.expiry_input.setDate(QDate.currentDate().addYears(2))
+        # Apply date picker styling
+        self.expiry_input.setStyleSheet(self.get_date_style())
+        # Add expiry date field to form with label (ASTERISK FOR REQUIRED)
+        layout.addRow("Expiry Date: *", self.expiry_input)
+
         # Unit dropdown
         self.unit_combo = QComboBox()
         # Add all unit types to dropdown
@@ -748,7 +782,7 @@ class ProductDialog(QDialog):
         self.unit_combo.setStyleSheet(self.get_combo_style())
         # Add unit field to form with label
         layout.addRow("Unit:", self.unit_combo)
-        
+
         # Package size input field
         self.package_input = QLineEdit()
         # If editing and package size exists, populate field
@@ -760,7 +794,7 @@ class ProductDialog(QDialog):
         self.package_input.setStyleSheet(self.get_input_style())
         # Add package size field to form with label
         layout.addRow("Package Size:", self.package_input)
-        
+
         # MRP (Maximum Retail Price) spin box
         self.mrp_input = QDoubleSpinBox()
         # Set maximum value to 999999.99
@@ -776,22 +810,7 @@ class ProductDialog(QDialog):
         self.mrp_input.setStyleSheet(self.get_spinbox_style())
         # Add MRP field to form with label
         layout.addRow("MRP: *", self.mrp_input)
-        
-        # Discount percentage spin box
-        self.discount_input = QDoubleSpinBox()
-        # Set maximum discount to 100%
-        self.discount_input.setMaximum(100)
-        # Set decimal places to 2
-        self.discount_input.setDecimals(2)
-        # Set percentage symbol suffix
-        self.discount_input.setSuffix(" %")
-        # If editing, use existing discount, otherwise default 55%
-        self.discount_input.setValue(self.product['discount_percent'] if self.product else 55.0)
-        # Apply spin box styling
-        self.discount_input.setStyleSheet(self.get_spinbox_style())
-        # Add discount field to form with label
-        layout.addRow("Discount %:", self.discount_input)
-        
+
         # Purchase price spin box
         self.purchase_price_input = QDoubleSpinBox()
         # Set maximum value to 999999.99
@@ -807,7 +826,7 @@ class ProductDialog(QDialog):
         self.purchase_price_input.setStyleSheet(self.get_spinbox_style())
         # Add purchase price field to form with label
         layout.addRow("Purchase Price:", self.purchase_price_input)
-        
+
         # Minimum stock level spin box
         self.min_stock_input = QSpinBox()
         # Set maximum value to 99999
@@ -818,7 +837,7 @@ class ProductDialog(QDialog):
         self.min_stock_input.setStyleSheet(self.get_spinbox_style())
         # Add min stock field to form with label
         layout.addRow("Min Stock Level:", self.min_stock_input)
-        
+
         # Initial stock field (only shown when adding new product)
         if not self.is_edit:
             # Create spin box for initial stock quantity
@@ -831,7 +850,7 @@ class ProductDialog(QDialog):
             self.initial_stock_input.setStyleSheet(self.get_spinbox_style())
             # Add initial stock field to form with label
             layout.addRow("Initial Stock:", self.initial_stock_input)
-        
+
         # Description input field
         self.description_input = QLineEdit()
         # If editing and description exists, populate field
@@ -841,11 +860,11 @@ class ProductDialog(QDialog):
         self.description_input.setStyleSheet(self.get_input_style())
         # Add description field to form with label
         layout.addRow("Description:", self.description_input)
-        
+
         # Create dialog button box with Save and Cancel buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        # Connect accepted signal to dialog accept (Save button)
-        buttons.accepted.connect(self.accept)
+        # Connect accepted signal to custom validation method
+        buttons.accepted.connect(self.validate_and_accept)
         # Connect rejected signal to dialog reject (Cancel button)
         buttons.rejected.connect(self.reject)
         # Apply button styling
@@ -862,54 +881,78 @@ class ProductDialog(QDialog):
                 background-color: #90AB8B;
             }
         """)
-        
+
         # Add button box to form layout
         layout.addRow(buttons)
-        
+
         # Set form layout as dialog layout
         self.setLayout(layout)
-    
+
+    def validate_and_accept(self):
+        """Validate required fields before accepting"""
+        # Check if batch number is empty
+        if not self.batch_input.text().strip():
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Batch Number is required. Please enter a batch number."
+            )
+            self.batch_input.setFocus()
+            return
+
+        # Check if expiry date is valid
+        if not self.expiry_input.date().isValid():
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Expiry Date is required. Please select a valid date."
+            )
+            self.expiry_input.setFocus()
+            return
+
+        # If all validations pass, accept the dialog
+        self.accept()
+
     def get_product_data(self):
         """Get product data from form"""
         # Create dictionary to store form data
         data = {
-            # Get product name and remove #EBF4DDspace
+            # Get product name and remove whitespace
             'name': self.name_input.text().strip(),
             # Get selected category
             'category': self.category_combo.currentText(),
-            # Get HSN code and remove #EBF4DDspace
+            # Get HSN code and remove whitespace
             'hsn_code': self.hsn_input.text().strip(),
             # Get selected unit
             'unit': self.unit_combo.currentText(),
-            # Get package size and remove #EBF4DDspace
+            # Get package size and remove whitespace
             'package_size': self.package_input.text().strip(),
             # Get MRP value
             'mrp': self.mrp_input.value(),
-            # Get discount percentage
-            'discount_percent': self.discount_input.value(),
             # Get purchase price
             'purchase_price': self.purchase_price_input.value(),
             # Get minimum stock level
             'min_stock_level': self.min_stock_input.value(),
-            # Get description and remove #EBF4DDspace
-            'description': self.description_input.text().strip()
+            # Get description and remove whitespace
+            'description': self.description_input.text().strip(),
+            # Get batch number (MANDATORY)
+            'batch_number': self.batch_input.text().strip(),
+            # Get expiry date in YYYY-MM-DD format (MANDATORY)
+            'expiry_date': self.expiry_input.date().toString("yyyy-MM-dd"),
+            # Set default discount to 0 (will be set at billing time)
+            'discount_percent': 0.0,
+            # Set selling_price same as MRP (will be calculated at billing time)
+            'selling_price': self.mrp_input.value()
         }
-        
+
         # If adding new product (not editing)
         if not self.is_edit:
             # Add initial stock quantity to data
             data['current_stock'] = self.initial_stock_input.value()
-        
-        # Import GST calculator module
-        from modules.gst_calculator import gst_calculator
-        # Calculate selling price based on MRP and discount
-        data['selling_price'] = gst_calculator.calculate_selling_price(
-            data['mrp'], data['discount_percent']
-        )
-        
+
         # Return complete product data dictionary
         return data
-    
+
     def get_input_style(self) -> str:
         """Get input field styling"""
         # Return CSS stylesheet for line edit fields
@@ -926,7 +969,7 @@ class ProductDialog(QDialog):
                 border: 2px solid #5A7863;
             }
         """
-    
+
     def get_combo_style(self) -> str:
         """Get combo box styling"""
         # Return CSS stylesheet for combo boxes
@@ -951,7 +994,7 @@ class ProductDialog(QDialog):
                 selection-color: #EBF4DD;
             }
         """
-    
+
     def get_spinbox_style(self) -> str:
         """Get spin box styling"""
         # Return CSS stylesheet for spin boxes
@@ -969,10 +1012,30 @@ class ProductDialog(QDialog):
             }
         """
 
+    def get_date_style(self) -> str:
+        """Get date picker styling"""
+        # Return CSS stylesheet for date picker
+        return """
+            QDateEdit {
+                background-color: #EBF4DD;
+                border: 2px solid #90AB8B;
+                border-radius: 5px;
+                padding: 8px;
+                color: #3B4953;
+                font-weight: bold;
+            }
+            QDateEdit:focus {
+                border: 2px solid #5A7863;
+            }
+            QDateEdit::drop-down {
+                border: none;
+            }
+        """
+
 
 class StockAdjustmentDialog(QDialog):
     """Dialog for adjusting stock"""
-    
+
     def __init__(self, parent=None, product=None):
         # Initialize parent QDialog class
         super().__init__(parent)
@@ -980,7 +1043,7 @@ class StockAdjustmentDialog(QDialog):
         self.product = product
         # Initialize dialog user interface
         self.init_ui()
-    
+
     def init_ui(self):
         """Initialize dialog UI"""
         # Set window title with product name
@@ -997,19 +1060,19 @@ class StockAdjustmentDialog(QDialog):
                 font-weight: bold;
             }
         """)
-        
+
         # Create form layout for input fields
         layout = QFormLayout()
         # Set spacing between form rows
         layout.setSpacing(10)
-        
+
         # Create label to display current stock in bold
         current_label = QLabel(f"<b>{self.product['current_stock']}</b>")
         # Apply dark text color
         current_label.setStyleSheet("color: #5A7863; font-size: 14pt;")
         # Add current stock to form with label
         layout.addRow("Current Stock:", current_label)
-        
+
         # Create spin box for new stock value
         self.new_stock_input = QSpinBox()
         # Set maximum value to 999999
@@ -1033,7 +1096,7 @@ class StockAdjustmentDialog(QDialog):
         """)
         # Add new stock field to form with label
         layout.addRow("New Stock: *", self.new_stock_input)
-        
+
         # Create input field for adjustment notes
         self.notes_input = QLineEdit()
         # Set placeholder text
@@ -1053,7 +1116,7 @@ class StockAdjustmentDialog(QDialog):
         """)
         # Add notes field to form with label
         layout.addRow("Notes:", self.notes_input)
-        
+
         # Create dialog button box with Save and Cancel buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         # Connect accepted signal to dialog accept (Save button)
@@ -1074,14 +1137,14 @@ class StockAdjustmentDialog(QDialog):
                 background-color: #90AB8B;
             }
         """)
-        
+
         # Add button box to form layout
         layout.addRow(buttons)
-        
+
         # Set form layout as dialog layout
         self.setLayout(layout)
-    
+
     def get_stock_data(self):
         """Get stock adjustment data"""
-        # Return tuple of new stock value and notes (with #EBF4DDspace removed)
+        # Return tuple of new stock value and notes (with whitespace removed)
         return self.new_stock_input.value(), self.notes_input.text().strip()

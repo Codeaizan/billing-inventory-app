@@ -77,6 +77,17 @@ class ReportManager:
                     if sp:
                         sales_person_name = sp['name']
                 
+                is_gst_bill = bool(bill.get('is_gst_bill', False))
+                cgst_amount = float(bill.get('cgst_amount', 0) or 0)
+                sgst_amount = float(bill.get('sgst_amount', 0) or 0)
+                igst_amount = float(bill.get('igst_amount', 0) or 0)
+                total_tax = float(bill.get('total_tax', 0) or 0)
+
+                # For safety, if none of the tax fields are set on a GST bill but total_tax exists,
+                # assume it is IGST (inter‑state) so reports are still consistent.
+                if is_gst_bill and cgst_amount == 0 and sgst_amount == 0 and igst_amount == 0 and total_tax > 0:
+                    igst_amount = total_tax
+
                 for item in bill_details['items']:
                     export_data.append({
                         'invoice_number': bill['invoice_number'],
@@ -93,10 +104,11 @@ class ReportManager:
                         'discount_percent': item['discount_percent'],
                         'rate': item['rate'],
                         'amount': item['amount'],
-                        'bill_type': 'GST' if bill.get('is_gst_bill', False) else 'Non-GST',
-                        'cgst': bill.get('cgst_amount', 0),
-                        'sgst': bill.get('sgst_amount', 0),
-                        'total_tax': bill.get('total_tax', 0),
+                        'bill_type': 'GST' if is_gst_bill else 'Non-GST',
+                        'cgst': cgst_amount,
+                        'sgst': sgst_amount,
+                        'igst': igst_amount,
+                        'total_tax': total_tax,
                         'grand_total': bill['grand_total']
                     })
         

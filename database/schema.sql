@@ -11,8 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
     last_login TIMESTAMP
 );
 
--- Sales Persons table (NEW)
-CREATE TABLE IF NOT EXISTS sales_persons (
+
+-- Sales Persons table (FIXED - removed underscore)
+CREATE TABLE IF NOT EXISTS salespersons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     phone TEXT,
@@ -21,8 +22,10 @@ CREATE TABLE IF NOT EXISTS sales_persons (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
 -- Insert default sales person
-INSERT OR IGNORE INTO sales_persons (id, name) VALUES (1, 'Counter Sale');
+INSERT OR IGNORE INTO salespersons (id, name) VALUES (1, 'Counter Sale');
+
 
 -- Products table
 CREATE TABLE IF NOT EXISTS products (
@@ -32,6 +35,8 @@ CREATE TABLE IF NOT EXISTS products (
     hsn_code TEXT DEFAULT '30049012',
     unit TEXT DEFAULT 'Nos',
     package_size TEXT,
+    batch_number TEXT,              -- ✅ NEW: Optional batch tracking
+    expiry_date TEXT,                -- ✅ NEW: Optional expiry (YYYY-MM-DD)
     mrp REAL NOT NULL,
     discount_percent REAL DEFAULT 55.0,
     selling_price REAL NOT NULL,
@@ -44,6 +49,7 @@ CREATE TABLE IF NOT EXISTS products (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 -- Customers table
 CREATE TABLE IF NOT EXISTS customers (
@@ -59,6 +65,7 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 -- Bills table (UPDATED - Added sales_person_id, is_gst_bill, removed payment_mode)
 CREATE TABLE IF NOT EXISTS bills (
@@ -78,15 +85,17 @@ CREATE TABLE IF NOT EXISTS bills (
     taxable_amount REAL DEFAULT 0.0,
     cgst_amount REAL DEFAULT 0.0,
     sgst_amount REAL DEFAULT 0.0,
+    igst_amount REAL DEFAULT 0.0,
     total_tax REAL DEFAULT 0.0,
     round_off REAL DEFAULT 0.0,
     grand_total REAL NOT NULL,
     created_by INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (customer_id) REFERENCES customers(id),
-    FOREIGN KEY (sales_person_id) REFERENCES sales_persons(id),
+    FOREIGN KEY (sales_person_id) REFERENCES salespersons(id),
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
+
 
 -- Bill Items table
 CREATE TABLE IF NOT EXISTS bill_items (
@@ -107,6 +116,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
+
 -- Stock History table
 CREATE TABLE IF NOT EXISTS stock_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,7 +134,8 @@ CREATE TABLE IF NOT EXISTS stock_history (
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
--- Company Settings table
+
+-- Company Settings table (UPDATED WITH DUAL BANKING)
 CREATE TABLE IF NOT EXISTS company_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     company_name TEXT NOT NULL DEFAULT 'Natural Health World',
@@ -136,9 +147,17 @@ CREATE TABLE IF NOT EXISTS company_settings (
     phone TEXT DEFAULT '9143746966, 9836623186',
     email TEXT DEFAULT 'skr.nhw@gmail.com',
     instagram TEXT DEFAULT '@naturalhealthworld_',
-    bank_name TEXT DEFAULT 'STATE BANK OF INDIA',
-    bank_account_no TEXT DEFAULT '42567178838',
-    bank_ifsc TEXT DEFAULT 'SBIN0011534',
+    
+    -- GST Banking Details
+    gst_bank_name TEXT DEFAULT 'STATE BANK OF INDIA',
+    gst_bank_account_no TEXT DEFAULT '42567178838',
+    gst_bank_ifsc TEXT DEFAULT 'SBIN0011534',
+    
+    -- Non-GST Banking Details
+    non_gst_bank_name TEXT DEFAULT '',
+    non_gst_bank_account_no TEXT DEFAULT '',
+    non_gst_bank_ifsc TEXT DEFAULT '',
+    
     gstin TEXT DEFAULT '',
     state_name TEXT DEFAULT 'West Bengal',
     state_code TEXT DEFAULT '19',
@@ -147,8 +166,10 @@ CREATE TABLE IF NOT EXISTS company_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
 -- Insert default company settings
 INSERT OR IGNORE INTO company_settings (id, company_name) VALUES (1, 'Natural Health World');
+
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
@@ -159,6 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_bills_sales_person ON bills(sales_person_id);
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id);
 CREATE INDEX IF NOT EXISTS idx_stock_history_product ON stock_history(product_id);
+
 
 -- Insert default admin user (password: admin123)
 INSERT OR IGNORE INTO users (id, username, password_hash, full_name, role) 

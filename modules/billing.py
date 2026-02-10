@@ -3,7 +3,13 @@ from datetime import datetime
 from database.db_manager import db
 from modules.gst_calculator import gst_calculator
 from modules.auth import auth_manager
+from utils.gst_states import get_state_from_gstin
+from utils.company_settings import company_settings
 from utils.logger import logger
+
+
+
+
 
 class BillingManager:
     """Manages billing operations"""
@@ -68,17 +74,16 @@ class BillingManager:
     def calculate_totals(self, is_gst_bill: bool = False) -> dict:
         """
         Calculate bill totals with or without GST
-        
+
         For Non-GST Bill:
             Subtotal = Sum of all item amounts
             Grand Total = Subtotal + Round Off
-        
+
         For GST Bill:
             Subtotal (Taxable Amount) = Sum of all item amounts
-            CGST = 2.5% of Subtotal
-            SGST = 2.5% of Subtotal
-            Total Tax = CGST + SGST (5%)
-            Grand Total = Subtotal + Total Tax + Round Off
+            GST at 5% total on taxable amount
+            Distribution (CGST/SGST vs IGST) is decided later in create_bill,
+            but we still need total_tax and grand_total here.
         """
         if not self.cart_items:
             return {
@@ -87,6 +92,7 @@ class BillingManager:
                 'taxable_amount': 0.0,
                 'cgst_amount': 0.0,
                 'sgst_amount': 0.0,
+                'igst_amount': 0.0,
                 'total_tax': 0.0,
                 'round_off': 0.0,
                 'grand_total': 0.0
@@ -102,15 +108,17 @@ class BillingManager:
         # Taxable amount is the subtotal (after discount)
         taxable_amount = subtotal
         
-        # Calculate GST if applicable
         if is_gst_bill:
-            cgst_amount = taxable_amount * 0.025  # 2.5%
-            sgst_amount = taxable_amount * 0.025  # 2.5%
-            total_tax = cgst_amount + sgst_amount  # 5%
+            # Total GST at 5% on taxable amount
+            total_tax = taxable_amount * 0.05
         else:
-            cgst_amount = 0.0
-            sgst_amount = 0.0
             total_tax = 0.0
+        
+        # For now, keep cgst/sgst/igst at 0 here; we will
+        # set correct distribution (CGST+SGST vs IGST) in create_bill
+        cgst_amount = 0.0
+        sgst_amount = 0.0
+        igst_amount = 0.0
         
         # Calculate grand total
         grand_total_before_round = subtotal + total_tax
@@ -125,19 +133,16 @@ class BillingManager:
             'taxable_amount': taxable_amount,
             'cgst_amount': cgst_amount,
             'sgst_amount': sgst_amount,
+            'igst_amount': igst_amount,
             'total_tax': total_tax,
             'round_off': round_off,
             'grand_total': grand_total
         }
     
     def generate_invoice_number(self) -> str:
-        """Generate next invoice number"""
-        from utils.company_settings import company_settings
-        
-        # Get invoice prefix
+        """Generate next invoice number based on prefix, FY, and configurable start"""
         prefix = company_settings.get('invoice_prefix', 'NH')
-        
-        # Get financial year (Apr-Mar)
+
         now = datetime.now()
         if now.month >= 4:
             fy_start = now.year
@@ -145,27 +150,68 @@ class BillingManager:
         else:
             fy_start = now.year - 1
             fy_end = now.year
-        
         fy_str = f"{fy_start % 100}-{fy_end % 100}"
-        
-        # Get last invoice number for this financial year
-        last_invoice = db.get_last_invoice_number(f"{prefix}/%/{fy_str}")
-        
-        if last_invoice:
-            # Extract number from invoice like "NH/123/25-26"
-            parts = last_invoice.split('/')
-            if len(parts) >= 2:
-                try:
-                    last_num = int(parts[1])
-                    next_num = last_num + 1
-                except:
-                    next_num = 1
-            else:
-                next_num = 1
+
+        running = company_settings.next_invoice_number
+
+        # Find a free invoice number (avoid UNIQUE constraint issues)
+        for _ in range(1000):
+            candidate = f"{prefix}/{running}/{fy_str}"
+            # Your existing helper returns None if bill does not exist
+            if db.get_bill_by_invoice_number(candidate) is None:
+                invoice_number = candidate
+                break
+            running += 1
         else:
-            next_num = 1
+            # Fallback if something very wrong
+            invoice_number = f"{prefix}/{running}/{fy_str}"
+
+        # Store the next number for the future
+        company_settings.set_next_invoice_number(running + 1)
+
+        return invoice_number
+
+    
+    def _split_tax_by_state(self, totals: dict, customer_gstin: str) -> dict:
+        """
+        Decide CGST+SGST vs IGST based on company state vs customer GSTIN state.
+
+        - Company state_code is in company_settings['state_code'] (e.g. "19" for West Bengal).
+        - Customer state_code is first 2 digits of GSTIN (or "" if invalid).
+        """
+        total_tax = totals.get('total_tax', 0.0)
         
-        return f"{prefix}/{next_num}/{fy_str}"
+        # Defaults
+        totals['cgst_amount'] = 0.0
+        totals['sgst_amount'] = 0.0
+        totals['igst_amount'] = 0.0
+        
+        # If no GST or total_tax is 0, nothing to split
+        if total_tax <= 0 or not customer_gstin:
+            logger.warning(f"_split_tax_by_state: total_tax={total_tax}, customer_gstin='{customer_gstin}' - returning zeros")
+            return totals
+        
+        company_state_code = company_settings.get('state_code', '').strip()
+        customer_state_code = customer_gstin[:2] if len(customer_gstin) >= 2 else ""
+        
+        logger.info(f"Tax split logic: company_state={company_state_code}, customer_state={customer_state_code}, total_tax={total_tax}")
+        
+        if company_state_code and customer_state_code == company_state_code:
+            # Intra-state: CGST + SGST (2.5% + 2.5%)
+            cgst = total_tax / 2
+            sgst = total_tax / 2
+            totals['cgst_amount'] = round(cgst, 2)
+            totals['sgst_amount'] = round(sgst, 2)
+            totals['igst_amount'] = 0.0
+            logger.info(f"Intra-state transaction: CGST={totals['cgst_amount']}, SGST={totals['sgst_amount']}")
+        else:
+            # Inter-state: IGST 5%
+            totals['cgst_amount'] = 0.0
+            totals['sgst_amount'] = 0.0
+            totals['igst_amount'] = round(total_tax, 2)
+            logger.info(f"Inter-state transaction: IGST={totals['igst_amount']}")
+        
+        return totals
     
     def create_bill(self, customer_data: dict, sales_person_id: int, is_gst_bill: bool = False) -> Tuple[bool, str, Optional[dict]]:
         """
@@ -204,8 +250,20 @@ class BillingManager:
             # Generate invoice number
             invoice_number = self.generate_invoice_number()
             
-            # Calculate totals
+            # Calculate totals (total_tax at 5% if GST bill)
             totals = self.calculate_totals(is_gst_bill)
+            
+            # If GST bill, split total_tax into CGST+SGST or IGST based on state
+            customer_gstin = customer_data.get('customer_gstin', '').strip()
+            if is_gst_bill:
+                totals = self._split_tax_by_state(totals, customer_gstin)
+            else:
+                totals['cgst_amount'] = 0.0
+                totals['sgst_amount'] = 0.0
+                totals['igst_amount'] = 0.0
+            
+            # Log final tax values
+            logger.info(f"Final tax split: cgst={totals['cgst_amount']}, sgst={totals['sgst_amount']}, igst={totals['igst_amount']}, total_tax={totals['total_tax']}")
             
             # Prepare bill data
             bill_data = {
@@ -216,7 +274,7 @@ class BillingManager:
                 'customer_address': customer_data.get('customer_address', ''),
                 'customer_city': customer_data.get('customer_city', ''),
                 'customer_pin_code': customer_data.get('customer_pin_code', ''),
-                'customer_gstin': customer_data.get('customer_gstin', ''),
+                'customer_gstin': customer_gstin,
                 'sales_person_id': sales_person_id,
                 'is_gst_bill': 1 if is_gst_bill else 0,
                 'subtotal': totals['subtotal'],
@@ -224,6 +282,7 @@ class BillingManager:
                 'taxable_amount': totals['taxable_amount'],
                 'cgst_amount': totals['cgst_amount'],
                 'sgst_amount': totals['sgst_amount'],
+                'igst_amount': totals['igst_amount'],
                 'total_tax': totals['total_tax'],
                 'round_off': totals['round_off'],
                 'grand_total': totals['grand_total'],
