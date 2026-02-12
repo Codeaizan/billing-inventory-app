@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS stock_history (
 );
 
 
--- Company Settings table (UPDATED WITH DUAL BANKING)
+-- Company Settings table (UPDATED WITH DUAL BANKING + BRANCH + UPI)
 CREATE TABLE IF NOT EXISTS company_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     company_name TEXT NOT NULL DEFAULT 'Natural Health World',
@@ -152,11 +152,15 @@ CREATE TABLE IF NOT EXISTS company_settings (
     gst_bank_name TEXT DEFAULT 'STATE BANK OF INDIA',
     gst_bank_account_no TEXT DEFAULT '42567178838',
     gst_bank_ifsc TEXT DEFAULT 'SBIN0011534',
+    gst_bank_branch TEXT DEFAULT '',
+    gst_upi_id TEXT DEFAULT '',
     
     -- Non-GST Banking Details
     non_gst_bank_name TEXT DEFAULT '',
     non_gst_bank_account_no TEXT DEFAULT '',
     non_gst_bank_ifsc TEXT DEFAULT '',
+    non_gst_bank_branch TEXT DEFAULT '',
+    non_gst_upi_id TEXT DEFAULT '',
     
     gstin TEXT DEFAULT '',
     state_name TEXT DEFAULT 'West Bengal',
@@ -165,6 +169,7 @@ CREATE TABLE IF NOT EXISTS company_settings (
     invoice_note TEXT DEFAULT 'Note - Please make cheques in favor of "NATURAL HEALTH WORLD"',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 
 -- Insert default company settings
@@ -185,3 +190,4 @@ CREATE INDEX IF NOT EXISTS idx_stock_history_product ON stock_history(product_id
 -- Insert default admin user (password: admin123)
 INSERT OR IGNORE INTO users (id, username, password_hash, full_name, role) 
 VALUES (1, 'admin', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5ufWJ7OyqG.Ry', 'Administrator', 'admin');
+

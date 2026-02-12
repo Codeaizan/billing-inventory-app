@@ -17,6 +17,8 @@ class DatabaseManager:
         self.add_batch_expiry_columns()
         self.migrate_dual_banking()
         self.migrate_add_igst_column()
+        self.migrate_banking_fields()  # ← ADD THIS
+
     
     def ensure_database_exists(self):
         """Create database and tables if they don't exist"""
@@ -1115,22 +1117,60 @@ class DatabaseManager:
         try:
             with self.get_connection() as conn:
                 conn.execute("""
-                    UPDATE company_settings 
-                    SET company_name=?, company_tagline=?, company_subtitle=?,
-                        company_certifications=?, office_address=?, factory_address=?,
-                        phone=?, email=?, instagram=?, bank_name=?, bank_account_no=?,
-                        bank_ifsc=?, gstin=?, state_name=?, state_code=?,
-                        invoice_prefix=?, invoice_note=?, updated_at=?
+                    UPDATE company_settings SET
+                        company_name=?,
+                        company_tagline=?,
+                        company_subtitle=?,
+                        company_certifications=?,
+                        office_address=?,
+                        factory_address=?,
+                        phone=?,
+                        email=?,
+                        instagram=?,
+                        gstin=?,
+                        state_name=?,
+                        state_code=?,
+                        invoice_prefix=?,
+                        invoice_note=?,
+                        gst_bank_name=?,
+                        gst_bank_account_no=?,
+                        gst_bank_ifsc=?,
+                        gst_bank_branch=?,
+                        gst_upi_id=?,
+                        non_gst_bank_name=?,
+                        non_gst_bank_account_no=?,
+                        non_gst_bank_ifsc=?,
+                        non_gst_bank_branch=?,
+                        non_gst_upi_id=?,
+                        updated_at=?
                     WHERE id=1
                 """, (
-                    settings['company_name'], settings['company_tagline'],
-                    settings['company_subtitle'], settings['company_certifications'],
-                    settings['office_address'], settings['factory_address'],
-                    settings['phone'], settings['email'], settings['instagram'],
-                    settings['bank_name'], settings['bank_account_no'],
-                    settings['bank_ifsc'], settings['gstin'],
-                    settings['state_name'], settings['state_code'],
-                    settings['invoice_prefix'], settings['invoice_note'],
+                    settings.get('company_name', ''),
+                    settings.get('company_tagline', ''),
+                    settings.get('company_subtitle', ''),
+                    settings.get('company_certifications', ''),
+                    settings.get('office_address', ''),
+                    settings.get('factory_address', ''),
+                    settings.get('phone', ''),
+                    settings.get('email', ''),
+                    settings.get('instagram', ''),
+                    settings.get('gstin', ''),
+                    settings.get('state_name', ''),
+                    settings.get('state_code', ''),
+                    settings.get('invoice_prefix', ''),
+                    settings.get('invoice_note', ''),
+                    # GST Banking Details
+                    settings.get('gst_bank_name', ''),
+                    settings.get('gst_bank_account_no', ''),
+                    settings.get('gst_bank_ifsc', ''),
+                    settings.get('gst_bank_branch', ''),
+                    settings.get('gst_upi_id', ''),
+                    # Non-GST Banking Details
+                    settings.get('non_gst_bank_name', ''),
+                    settings.get('non_gst_bank_account_no', ''),
+                    settings.get('non_gst_bank_ifsc', ''),
+                    settings.get('non_gst_bank_branch', ''),
+                    settings.get('non_gst_upi_id', ''),
                     datetime.now()
                 ))
                 conn.commit()
@@ -1139,6 +1179,8 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating company settings: {e}")
             return False
+
+
         
     def migrate_dual_banking(self):
         """Migrate to support dual banking (GST and Non-GST)"""
@@ -1183,6 +1225,30 @@ class DatabaseManager:
                 
         except Exception as e:
             logger.error(f"Error in dual banking migration: {e}")
+            return False
+    
+    # ← ADD NEW METHOD HERE (right after migrate_dual_banking)
+    def migrate_banking_fields(self):
+        """Add missing banking fields (branch and UPI)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("PRAGMA table_info(company_settings)")
+                columns = [row['name'] for row in cursor.fetchall()]
+                
+                if 'gst_bank_branch' not in columns:
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_bank_branch TEXT DEFAULT ''")
+                if 'gst_upi_id' not in columns:
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN gst_upi_id TEXT DEFAULT ''")
+                if 'non_gst_bank_branch' not in columns:
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_bank_branch TEXT DEFAULT ''")
+                if 'non_gst_upi_id' not in columns:
+                    conn.execute("ALTER TABLE company_settings ADD COLUMN non_gst_upi_id TEXT DEFAULT ''")
+                
+                conn.commit()
+                logger.info("Banking fields migration completed")
+                return True
+        except Exception as e:
+            logger.error(f"Error in banking migration: {e}")
             return False
 
     def migrate_add_igst_column(self) -> bool:

@@ -85,57 +85,68 @@ class CompanySettings:
     def update(self, settings: dict) -> bool:
         """
         Update settings.
-
-        db.update_company_settings expects a fixed set of keys:
-        company_name, company_tagline, company_subtitle, company_certifications,
-        office_address, factory_address, phone, email, instagram,
-        bank_name, bank_account_no, bank_ifsc, gstin, state_name, state_code,
-        invoice_prefix, invoice_note.
+        db.update_company_settings expects a fixed set of keys.
         """
         current = self.get_all()
         merged = current.copy()
         merged.update(settings)
-
+        
         # Ensure next_invoice_number is encoded into invoice_note before saving
         ninv = int(merged.get('next_invoice_number', 1) or 1)
         note = merged.get('invoice_note', '') or ''
         # strip both old visible and new hidden markers
-        note = re.sub(r'<!--NEXT_INV=\d+-->', '', note)
+        note = re.sub(r'<next_inv_hidden>(\d+)</next_inv_hidden>', '', note)
         note = re.sub(r'\[NEXT_INV=\d+\]', '', note)
         note = note.strip()
         # append fresh hidden marker
-        note = f"{note} <!--NEXT_INV={ninv}-->".strip()
+        note = f"{note} <next_inv_hidden>{ninv}</next_inv_hidden>".strip()
         merged['invoice_note'] = note
-
-
-
+        
         full_for_db = {
-            'company_name':     merged.get('company_name', ''),
-            'company_tagline':  merged.get('company_tagline', ''),
+            'company_name': merged.get('company_name', ''),
+            'company_tagline': merged.get('company_tagline', ''),
             'company_subtitle': merged.get('company_subtitle', ''),
             'company_certifications': merged.get('company_certifications', ''),
-            'office_address':   merged.get('office_address', ''),
-            'factory_address':  merged.get('factory_address', ''),
-            'phone':            merged.get('phone', ''),
-            'email':            merged.get('email', ''),
-            'instagram':        merged.get('instagram', ''),
-            'bank_name':        merged.get('bank_name', ''),
-            'bank_account_no':  merged.get('bank_account_no', ''),
-            'bank_ifsc':        merged.get('bank_ifsc', ''),
-            'gstin':            merged.get('gstin', ''),
-            'state_name':       merged.get('state_name', ''),
-            'state_code':       merged.get('state_code', ''),
-            'invoice_prefix':   merged.get('invoice_prefix', 'NH'),
-            'invoice_note':     merged.get('invoice_note', ''),
+            'office_address': merged.get('office_address', ''),
+            'factory_address': merged.get('factory_address', ''),
+            'phone': merged.get('phone', ''),
+            'email': merged.get('email', ''),
+            'instagram': merged.get('instagram', ''),
+            'gstin': merged.get('gstin', ''),
+            'state_name': merged.get('state_name', ''),
+            'state_code': merged.get('state_code', ''),
+            'invoice_prefix': merged.get('invoice_prefix', 'NH'),
+            'invoice_note': merged.get('invoice_note', ''),
+            
+            # ✅ ADD NEW GST BANKING FIELDS
+            'gst_bank_name': merged.get('gst_bank_name', ''),
+            'gst_bank_account_no': merged.get('gst_bank_account_no', ''),
+            'gst_bank_ifsc': merged.get('gst_bank_ifsc', ''),
+            'gst_bank_branch': merged.get('gst_bank_branch', ''),
+            'gst_upi_id': merged.get('gst_upi_id', ''),
+            
+            # ✅ ADD NEW NON-GST BANKING FIELDS
+            'non_gst_bank_name': merged.get('non_gst_bank_name', ''),
+            'non_gst_bank_account_no': merged.get('non_gst_bank_account_no', ''),
+            'non_gst_bank_ifsc': merged.get('non_gst_bank_ifsc', ''),
+            'non_gst_bank_branch': merged.get('non_gst_bank_branch', ''),
+            'non_gst_upi_id': merged.get('non_gst_upi_id', ''),
+            
+            # Legacy fields (for backward compatibility)
+            'bank_name': merged.get('bank_name', ''),
+            'bank_account_no': merged.get('bank_account_no', ''),
+            'bank_ifsc': merged.get('bank_ifsc', ''),
         }
-
+        
         success = db.update_company_settings(full_for_db)
+        
         if not success:
             return False
-
+        
         # keep full merged state in memory, including next_invoice_number, banking, etc.
         self._settings = merged
         return True
+
     
     def get_bank_details(self, is_gst_bill: bool = False) -> dict:
         """
