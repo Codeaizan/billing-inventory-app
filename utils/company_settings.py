@@ -70,6 +70,7 @@ class CompanySettings:
             'invoice_prefix': 'NH',
             # logical default; physical storage is inside invoice_note marker
             'next_invoice_number': 1,
+            'logo_path': 'assets/logo.jpeg',
             'invoice_note': 'Note - Please make cheques in favor of "NATURAL HEALTH WORLD"',
         }
     
@@ -220,6 +221,10 @@ class CompanySettings:
     @property
     def non_gst_bank_ifsc(self):
         return self.get('non_gst_bank_ifsc', '')
+    
+    @property
+    def logo_path(self):
+        return self.get('logo_path', 'assets/logo.jpeg')
     
     @property
     def next_invoice_number(self) -> int:

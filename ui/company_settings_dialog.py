@@ -179,11 +179,6 @@ class CompanySettingsDialog(QDialog):
         self.invoice_note_input.setFixedHeight(60)
         layout.addRow("Invoice Note:", self.invoice_note_input)
 
-        self.invoice_note_input = QTextEdit()
-        self.invoice_note_input.setStyleSheet(self.get_input_style())
-        self.invoice_note_input.setFixedHeight(60)
-        layout.addRow("Invoice Note:", self.invoice_note_input)
-
         self.invoice_prefix_input = QLineEdit()
         self.invoice_prefix_input.setStyleSheet(self.get_input_style())
         layout.addRow("Invoice Prefix:", self.invoice_prefix_input)
